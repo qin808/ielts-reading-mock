@@ -147,6 +147,9 @@ function QuestionItem({ question, isCurrent, onAnswerChange, showResult }: Quest
     question.type === 'matching_heading' ||
     question.type === 'matching_information' ||
     question.type === 'matching_name';
+  const isFillBlank =
+    question.type === 'fill_blank_summary' ||
+    question.type === 'fill_blank_sentence';
   const isCorrect = useMemo(() => {
     if (!showResult) return null;
     const ua = question.userAnswer;
@@ -169,14 +172,16 @@ function QuestionItem({ question, isCurrent, onAnswerChange, showResult }: Quest
         showResult && isCorrect === false && 'bg-destructive/10 ring-1 ring-destructive/30',
       )}
     >
-      {/* 题干 */}
+      {/* 题干（填空题的题干含空格标记，在选项区统一渲染） */}
       <div className="flex gap-3 items-start">
         <span className="shrink-0 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-semibold">
           {question.number}
         </span>
-        <div className="flex-1 text-sm text-foreground leading-relaxed pt-1">
-          {question.questionText}
-        </div>
+        {!isFillBlank && (
+          <div className="flex-1 text-sm text-foreground leading-relaxed pt-1">
+            {question.questionText}
+          </div>
+        )}
         {/* 匹配题：下拉框与题干同行 */}
         {isMatching && (
           <div className="shrink-0 pt-0.5">
@@ -187,7 +192,7 @@ function QuestionItem({ question, isCurrent, onAnswerChange, showResult }: Quest
 
       {/* 选项区（非匹配题） */}
       {!isMatching && (
-        <div className="pl-10 mt-3 space-y-2">
+        <div className={cn('mt-3 space-y-2', isFillBlank ? 'pl-10' : 'pl-10')}>
           {renderOptions(question, id, onAnswerChange, showResult)}
         </div>
       )}
@@ -353,44 +358,71 @@ function renderOptions(
     const count = blanks ?? (type === 'fill_blank_sentence' ? 1 : 1);
     const ua = Array.isArray(userAnswer) ? userAnswer : userAnswer ? [userAnswer] : [];
     const ca = Array.isArray(correctAnswer) ? correctAnswer : [correctAnswer];
+    const qText = question.questionText || '';
 
-    // 渲染带编号的填空输入框
-    const blanksJsx: React.ReactNode[] = [];
-    for (let i = 0; i < count; i++) {
-      const blankNum = i + 1;
-      const val = ua[i] ?? '';
-      const isCorrectBlank = showResult && val.trim().toLowerCase() === (ca[i] ?? '').toLowerCase();
-      const isWrongBlank = showResult && val && val.trim().toLowerCase() !== (ca[i] ?? '').toLowerCase();
-      blanksJsx.push(
-        <div key={i} className="inline-flex items-center mx-1 align-middle">
-          <span className="text-xs text-muted-foreground mr-1 font-medium">{blankNum}.</span>
-          <input
-            type="text"
-            value={val}
-            disabled={showResult}
-            onChange={(e) => {
-              const next = [...ua];
-              next[i] = e.target.value;
-              onAnswerChange(question.id, next);
-            }}
-            className={cn(
-              'w-28 h-7 px-2 text-sm border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary',
-              showResult && isCorrectBlank && 'bg-success/15 border-success/50 text-success-foreground',
-              showResult && isWrongBlank && 'bg-destructive/15 border-destructive/50',
-            )}
-            placeholder={`第${blankNum}空`}
-          />
-        </div>,
+    // 生成单个填空输入框
+    const renderInput = (index: number) => {
+      const blankNum = index + 1;
+      const val = ua[index] ?? '';
+      const isCorrectBlank = showResult && val.trim().toLowerCase() === (ca[index] ?? '').toLowerCase();
+      const isWrongBlank = showResult && val && val.trim().toLowerCase() !== (ca[index] ?? '').toLowerCase();
+      return (
+        <input
+          key={`blank-${index}`}
+          type="text"
+          value={val}
+          disabled={showResult}
+          onChange={(e) => {
+            const next = [...ua];
+            next[index] = e.target.value;
+            onAnswerChange(question.id, next);
+          }}
+          className={cn(
+            'inline-block w-28 h-7 px-2 mx-1 text-sm border border-input rounded-md align-middle focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary',
+            showResult && isCorrectBlank && 'bg-success/15 border-success/50 text-success-foreground',
+            showResult && isWrongBlank && 'bg-destructive/15 border-destructive/50',
+          )}
+          placeholder={`第${blankNum}空`}
+        />
+      );
+    };
+
+    // 如果题干中包含 _____ 标记，将输入框嵌入句子中
+    if (qText.includes('_____')) {
+      const parts = qText.split('_____');
+      const elements: React.ReactNode[] = [];
+      parts.forEach((part, i) => {
+        elements.push(<span key={`text-${i}`}>{part}</span>);
+        if (i < parts.length - 1) {
+          elements.push(renderInput(i));
+        }
+      });
+      // 如果实际空格数多于标记数，补充额外输入框
+      if (count > parts.length - 1) {
+        for (let i = parts.length - 1; i < count; i++) {
+          elements.push(renderInput(i));
+        }
+      }
+      return (
+        <div className="text-sm leading-8 text-foreground/90">
+          {elements}
+        </div>
       );
     }
 
+    // 兼容：题干中没有 _____ 标记，回退到题干 + 下方输入框模式
     return (
       <div className="space-y-3">
         <div className="text-sm leading-8 text-foreground/90">
-          请在下方填写答案：
+          {qText}
         </div>
         <div className="flex flex-wrap gap-2">
-          {blanksJsx}
+          {Array.from({ length: count }, (_, i) => (
+            <div key={i} className="inline-flex items-center mx-1 align-middle">
+              <span className="text-xs text-muted-foreground mr-1 font-medium">{i + 1}.</span>
+              {renderInput(i)}
+            </div>
+          ))}
         </div>
       </div>
     );

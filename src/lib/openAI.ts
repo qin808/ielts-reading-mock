@@ -45,11 +45,13 @@ const SYSTEM_PROMPT = `你是一位专业的雅思考试内容结构化专家。
 1. 严格识别 Passage 1/2/3 三篇文章及其对应的题目
 2. 题目编号为全局连续编号（1-40）
 3. 选项数组中保留 A./B./C. 前缀
-4. 填空题若有多空，answer 为数组，按空的顺序排列
-5. 多选题 answer 为数组
-6. 若 PDF 中未提供正确答案，answer 字段留空字符串
-7. passage_content 保留原文的段落结构，用 \\n\\n 分隔段落
-8. 只输出 JSON，不要输出任何解释性文字或 markdown 标记`;
+4. 填空题（FILL_BLANK_SUMMARY / FILL_BLANK_SENTENCE）的 question_text 必须包含完整的句子上下文，用 _____（5个下划线）标记空格位置。例如："The ditch and henge were dug, possibly using tools made from _____." 多空题用多个 _____ 依次标记。
+5. 填空题若有多空，answer 为数组，按空的顺序排列
+6. 多选题 answer 为数组
+7. 若 PDF 中未提供正确答案，answer 字段留空字符串
+8. passage_content 保留原文的段落结构，用 \\n\\n 分隔段落
+9. passage_content 中必须过滤掉页码（如纯数字行）、页眉页脚（如 "Test 2"、"Cambridge IELTS"、考试机构名称等）、角标、脚注标记等非正文内容
+10. 只输出 JSON，不要输出任何解释性文字或 markdown 标记`;
 
 export interface StructuredResult {
   passages: {

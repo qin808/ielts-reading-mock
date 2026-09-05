@@ -26,6 +26,72 @@ const OCR_SCALE = 1.8;
 const MAX_OCR_PAGES = 15;
 
 /**
+ * 清理 PDF 提取的文本，过滤页码、页眉页脚、角标等无关内容
+ */
+function cleanExtractedText(text: string): string {
+  const lines = text.split('\n');
+  const cleaned: string[] = [];
+
+  // 统计每行出现次数（页眉页脚会重复出现）
+  const lineCount = new Map<string, number>();
+  lines.forEach((l) => {
+    const trimmed = l.trim();
+    if (trimmed) {
+      lineCount.set(trimmed, (lineCount.get(trimmed) || 0) + 1);
+    }
+  });
+
+  // 常见页眉页脚关键词
+  const headerFooterPatterns = [
+    /^test\s*\d+$/i,
+    /^cambridge\s+ielts/i,
+    /^reading\s+passage\s*\d+$/i,
+    /^questions\s+\d+[-–]\d+$/i,
+    /^you\s+should\s+spend\s+about\s+\d+\s+minutes/i,
+    /^\d+\s*\/\s*\d+$/, // 页码格式 1/4
+    /^page\s+\d+/i,
+    /^©\s*cambridge/i,
+    /^photocopiable/i,
+  ];
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+
+    // 空行保留（用于段落分隔）
+    if (!trimmed) {
+      cleaned.push(line);
+      return;
+    }
+
+    // 过滤纯数字行（页码）
+    if (/^\d+$/.test(trimmed) && trimmed.length <= 3) {
+      return;
+    }
+
+    // 过滤匹配页眉页脚模式的行
+    if (headerFooterPatterns.some((p) => p.test(trimmed))) {
+      return;
+    }
+
+    // 过滤重复出现 3 次以上的短行（很可能是页眉页脚）
+    const count = lineCount.get(trimmed) || 0;
+    if (count >= 3 && trimmed.length < 50) {
+      return;
+    }
+
+    // 过滤只有 1-2 个字符且不是常见标点的行（角标）
+    if (trimmed.length <= 2 && !/^[.,;:!?'"()]$/.test(trimmed)) {
+      return;
+    }
+
+    cleaned.push(line);
+  });
+
+  // 合并多余的空行
+  return cleaned.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
  * 对图片进行 OCR 识别
  */
 export async function ocrImage(
@@ -132,12 +198,12 @@ export async function parsePdfText(
     pageTexts.push(lines.map((l) => l.text).join('\n'));
   }
 
-  const text = pageTexts.join('\n\n');
+  const text = cleanExtractedText(pageTexts.join('\n\n'));
 
   // 判断是否为扫描件
   if (text.trim().length < SCANNED_THRESHOLD) {
     onProgress?.({ phase: 'scanned_detected', progress: 0, currentPage: 0, totalPages: numPages });
-    const ocrText = await ocrScannedPdf(pdf, onProgress);
+    const ocrText = cleanExtractedText(await ocrScannedPdf(pdf, onProgress));
     return { text: ocrText, numPages, usedOcr: true };
   }
 
