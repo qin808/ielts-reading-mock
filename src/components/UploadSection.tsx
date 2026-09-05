@@ -57,6 +57,8 @@ export default function UploadSection({ onFileSelected, onUseMock, isParsing }: 
         return;
       }
       setSelectedFile(file);
+      // 重置 input value，确保下次选择同一文件也能触发 onChange
+      if (inputRef.current) inputRef.current.value = '';
     }
   }, []);
 
@@ -69,6 +71,8 @@ export default function UploadSection({ onFileSelected, onUseMock, isParsing }: 
       }
       setSelectedFile(file);
     }
+    // 重置 input value，确保下次选择同一文件也能触发 onChange
+    if (inputRef.current) inputRef.current.value = '';
   }, []);
 
   const handleStart = useCallback(() => {
