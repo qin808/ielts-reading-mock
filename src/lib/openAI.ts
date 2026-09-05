@@ -240,3 +240,122 @@ function convertToReadingTest(data: StructuredResult, fileName: string): IReadin
   // 避免 TypeScript 未使用变量告警
   void totalQuestions;
 }
+
+const GRADE_SYSTEM_PROMPT = `你是一位资深雅思阅读考官。请根据提供的阅读文章内容，回答以下雅思阅读题目。
+
+输出严格的 JSON 格式，key 是题目编号（数字字符串），value 是正确答案：
+- 判断题（TRUE/FALSE/NOT GIVEN）：值为 "TRUE" / "FALSE" / "NOT GIVEN"
+- 单选题：值为选项字母，如 "A"、"B"、"C"、"D"
+- 多选题：值为选项字母数组，如 ["A", "C"]
+- 填空题：值为答案字符串（从原文中提取的单词/短语），多空则为数组
+- 匹配题：值为匹配的字母/编号
+
+示例输出：
+{
+  "1": "TRUE",
+  "2": "C",
+  "3": ["A", "D"],
+  "4": "synthetic string",
+  "5": ["5 pounds", "customisation"]
+}
+
+注意：
+1. 所有答案必须基于文章内容，不能凭空猜测
+2. 填空题答案必须是文章中出现的原词
+3. 只输出 JSON，不要输出任何解释性文字`;
+
+/**
+ * AI 自动批改：根据文章内容生成每道题的正确答案
+ * 按 Passage 分批调用，避免 token 超限
+ */
+export async function gradeAnswers(
+  apiKey: string,
+  passageContent: string,
+  questions: IQuestion[],
+  model: string = DEFAULT_MODEL,
+  apiUrl: string = DEFAULT_API_URL,
+): Promise<Record<number, string | string[]>> {
+  if (!apiKey.trim()) {
+    throw new Error('请先设置 OpenAI API Key');
+  }
+  if (questions.length === 0) return {};
+
+  // 构建题目文本
+  const questionsText = questions
+    .map((q) => {
+      let text = `第${q.number}题 [${q.type}]: ${q.questionText}`;
+      if (q.options && q.options.length > 0) {
+        text += '\n选项：\n' + q.options.join('\n');
+      }
+      if (q.blanks && q.blanks > 1) {
+        text += `\n（共${q.blanks}个空）`;
+      }
+      return text;
+    })
+    .join('\n\n');
+
+  const userPrompt = `阅读文章：
+
+${passageContent.slice(0, 30000)}
+
+---
+
+题目：
+
+${questionsText}
+
+请根据文章内容，输出每道题的正确答案 JSON。`;
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: GRADE_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    let errMsg = `API 请求失败 (${response.status})`;
+    try {
+      const errJson = JSON.parse(errText);
+      if (errJson.error?.message) errMsg = errJson.error.message;
+    } catch {
+      // ignore
+    }
+    throw new Error(errMsg);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('AI 批改返回内容为空');
+  }
+
+  let parsed: Record<string, string | string[]>;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error('AI 批改返回的 JSON 格式解析失败');
+  }
+
+  // 转换 key 为数字
+  const result: Record<number, string | string[]> = {};
+  Object.entries(parsed).forEach(([k, v]) => {
+    const num = parseInt(k, 10);
+    if (!isNaN(num)) {
+      result[num] = v;
+    }
+  });
+
+  return result;
+}

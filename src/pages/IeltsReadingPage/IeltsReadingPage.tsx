@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
+import { ChevronUp, ChevronDown, AlertTriangle, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,10 +18,10 @@ import QuestionNav from '@/components/QuestionNav';
 import ResultPanel from '@/components/ResultPanel';
 import { MOCK_READING_TEST, type IReadingTest } from '@/data/mockReading';
 import { parsePdfText } from '@/lib/pdfParser';
-import { structureReadingText, DEFAULT_MODEL, DEFAULT_API_URL } from '@/lib/openAI';
+import { structureReadingText, gradeAnswers, DEFAULT_MODEL, DEFAULT_API_URL } from '@/lib/openAI';
 import { storage, STORAGE_KEYS } from '@/lib/storage';
 
-type ExamPhase = 'upload' | 'parsing' | 'exam' | 'result';
+type ExamPhase = 'upload' | 'parsing' | 'exam' | 'grading' | 'result';
 
 interface PersistedState {
   test: IReadingTest;
@@ -43,6 +43,8 @@ export default function IeltsReadingPage() {
   const [parseStep, setParseStep] = useState(0);
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [isGrading, setIsGrading] = useState(false);
+  const [gradingProgress, setGradingProgress] = useState(0);
   const [splitRatio, setSplitRatio] = useState(50); // 左栏百分比
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -141,8 +143,13 @@ export default function IeltsReadingPage() {
 
   const currentPassageQuestions = useMemo(() => {
     if (!test) return [];
-    return test.questions.filter((q) => q.passageIndex === currentPassage);
-  }, [test, currentPassage]);
+    return test.questions
+      .filter((q) => q.passageIndex === currentPassage)
+      .map((q) => ({
+        ...q,
+        userAnswer: answers[q.id] ?? q.userAnswer,
+      }));
+  }, [test, currentPassage, answers]);
 
   const answeredCount = useMemo(() => {
     if (!test) return 0;
@@ -199,46 +206,102 @@ export default function IeltsReadingPage() {
     }
   }, [test]);
 
-  const handleAutoSubmit = useCallback(() => {
-    setDuration(3600);
-    setPhase('result');
-    // 保存结果
+  const runGrading = useCallback(async (testToGrade: IReadingTest, usedDuration: number) => {
+    setIsGrading(true);
+    setGradingProgress(0);
+    setPhase('grading');
+
+    const apiKey = storage.getItem(STORAGE_KEYS.OPENAI_KEY) ?? '';
+    const model = storage.getItem(STORAGE_KEYS.MODEL) || DEFAULT_MODEL;
+    const apiUrl = storage.getItem(STORAGE_KEYS.API_BASE_URL) || DEFAULT_API_URL;
+
+    if (!apiKey) {
+      // 没有 API Key，直接用已有答案（如果 PDF 解析时带了答案）
+      toast.warning('未设置 API Key，将使用解析时的答案（如有）进行判分');
+      setDuration(usedDuration);
+      setPhase('result');
+      setIsGrading(false);
+      return;
+    }
+
     try {
-      if (test) {
+      // 更新 test 对象，用于保存批改后的答案
+      const updatedQuestions = [...testToGrade.questions];
+
+      for (let i = 0; i < testToGrade.passages.length; i++) {
+        const passage = testToGrade.passages[i];
+        const passageQuestions = updatedQuestions.filter((q) => q.passageIndex === passage.index);
+        if (passageQuestions.length === 0) continue;
+
+        setGradingProgress(Math.round(((i + 1) / testToGrade.passages.length) * 100));
+
+        // 将 HTML 内容转为纯文本
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = passage.content;
+        const plainText = tempDiv.textContent || tempDiv.innerText || '';
+
+        try {
+          const graded = await gradeAnswers(apiKey, plainText, passageQuestions, model, apiUrl);
+          // 更新正确答案
+          passageQuestions.forEach((q) => {
+            if (graded[q.number] !== undefined) {
+              const idx = updatedQuestions.findIndex((qq) => qq.id === q.id);
+              if (idx !== -1) {
+                updatedQuestions[idx] = { ...updatedQuestions[idx], correctAnswer: graded[q.number] };
+              }
+            }
+          });
+        } catch (err) {
+          console.error(`Passage ${passage.index} 批改失败:`, err);
+          toast.error(`Passage ${passage.index} 批改失败：${err instanceof Error ? err.message : '未知错误'}`);
+        }
+      }
+
+      // 更新 test 状态
+      const gradedTest: IReadingTest = { ...testToGrade, questions: updatedQuestions };
+      setTest(gradedTest);
+      setDuration(usedDuration);
+      setPhase('result');
+
+      // 保存结果
+      try {
         const data: PersistedState = {
-          test,
+          test: gradedTest,
           answers,
           timeLeft: 0,
           phase: 'result',
-          duration: 3600,
+          duration: usedDuration,
         };
         storage.setItem(STORAGE_KEYS.STATE, JSON.stringify(data));
+      } catch (e) {
+        console.error('Save result failed:', e);
       }
-    } catch (e) {
-      console.error('Save result failed:', e);
+
+      toast.success('AI 批改完成！');
+    } catch (err) {
+      console.error('Grading failed:', err);
+      toast.error('AI 批改失败：' + (err instanceof Error ? err.message : '未知错误'));
+      setDuration(usedDuration);
+      setPhase('result');
+    } finally {
+      setIsGrading(false);
+      setGradingProgress(0);
     }
-  }, [answers, test]);
+  }, [answers]);
+
+  const handleAutoSubmit = useCallback(() => {
+    if (!test) return;
+    toast.info('已交卷，AI 正在批改...');
+    runGrading(test, 3600);
+  }, [test, runGrading]);
 
   const handleSubmitConfirm = useCallback(() => {
     setSubmitDialogOpen(false);
-    setDuration(3600 - timeLeft);
-    setPhase('result');
-    try {
-      if (test) {
-        const data: PersistedState = {
-          test,
-          answers,
-          timeLeft: 0,
-          phase: 'result',
-          duration: 3600 - timeLeft,
-        };
-        storage.setItem(STORAGE_KEYS.STATE, JSON.stringify(data));
-      }
-    } catch (e) {
-      console.error('Save result failed:', e);
-    }
-    toast.success('已交卷，正在判分...');
-  }, [answers, test, timeLeft]);
+    if (!test) return;
+    const usedDuration = 3600 - timeLeft;
+    toast.info('已交卷，AI 正在批改...');
+    runGrading(test, usedDuration);
+  }, [test, timeLeft, runGrading]);
 
   const handleRetry = useCallback(() => {
     if (!test) return;
@@ -331,6 +394,36 @@ export default function IeltsReadingPage() {
         onUseMock={handleUseMock}
         isParsing={isParsing}
       />
+    );
+  }
+
+  if (phase === 'grading' && test) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/10 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-card rounded-2xl border border-border/50 shadow-lg p-8 text-center space-y-6">
+          <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+            <Sparkles className="w-8 h-8 text-primary animate-pulse" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold text-foreground">AI 正在批改</h2>
+            <p className="text-sm text-muted-foreground">
+              正在根据文章内容逐篇核对答案，请稍候...
+            </p>
+          </div>
+          <div className="space-y-2">
+            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-500"
+                style={{ width: `${gradingProgress}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{gradingProgress}% 完成</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            批改过程需要调用 AI 接口，通常需要 30-60 秒
+          </p>
+        </div>
+      </div>
     );
   }
 
