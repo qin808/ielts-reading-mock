@@ -347,25 +347,29 @@ export default function IeltsReadingPage() {
   }, []);
 
   const handleFileSelected = useCallback(async (file: File, apiKey: string) => {
+    // 重置旧状态
+    setTest(null);
+    setAnswers({});
     setIsParsing(true);
     setParseStep(1);
     try {
       // 第一步：PDF 解析（pdf.js 本地解析）
-      toast.info('正在解析 PDF，请稍候...');
+      toast.info('正在解析 PDF 文本...', { duration: 3000 });
       const { text, numPages } = await parsePdfText(file);
       if (!text || text.trim().length < 100) {
-        throw new Error('PDF 内容提取失败，请检查文件是否为可选择文本的 PDF');
+        throw new Error('PDF 内容提取失败，请确认是文字版 PDF（非扫描件/图片）');
       }
       console.info(`PDF 解析完成，共 ${numPages} 页，文本长度 ${text.length}`);
 
       setParseStep(2);
-      toast.info('正在结构化题目...');
+      toast.info('正在 AI 结构化题目...', { duration: 5000 });
 
       // 读取用户选择的模型和 API 地址
       const model = storage.getItem(STORAGE_KEYS.MODEL) || DEFAULT_MODEL;
       const apiUrl = storage.getItem(STORAGE_KEYS.API_BASE_URL) || DEFAULT_API_URL;
+      console.info(`调用模型: ${model}, API: ${apiUrl}`);
 
-      // 第二步：题目结构化（OpenAI API）
+      // 第二步：题目结构化（AI API）
       const parsedTest = await structureReadingText(apiKey, text, file.name, model, apiUrl);
 
       setTest(parsedTest);
@@ -377,9 +381,8 @@ export default function IeltsReadingPage() {
       toast.success('解析成功，开始模考');
     } catch (err) {
       console.error('PDF parsing failed:', err);
-      toast.error(
-        err instanceof Error ? err.message : '解析失败，请重试或使用示例真题体验',
-      );
+      const errMsg = err instanceof Error ? err.message : '未知错误';
+      toast.error(`解析失败：${errMsg}`, { duration: 6000 });
     } finally {
       setIsParsing(false);
       setParseStep(0);

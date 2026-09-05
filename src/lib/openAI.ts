@@ -70,6 +70,117 @@ export interface StructuredResult {
 }
 
 /**
+ * 从模型返回内容中提取 JSON（兼容不支持 response_format 的 API）
+ */
+function extractJson(content: string): any {
+  // 直接尝试解析
+  try {
+    return JSON.parse(content);
+  } catch {
+    // ignore
+  }
+  // 尝试提取 ```json ... ``` 包裹的内容
+  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[1].trim());
+    } catch {
+      // ignore
+    }
+  }
+  // 尝试提取第一个 { 到最后一个 } 之间的内容
+  const firstBrace = content.indexOf('{');
+  const lastBrace = content.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(content.slice(firstBrace, lastBrace + 1));
+    } catch {
+      // ignore
+    }
+  }
+  throw new Error('返回的 JSON 格式解析失败，请重试或更换模型');
+}
+
+/**
+ * 调用 AI API，自动兼容是否支持 response_format
+ */
+async function callChatApi(
+  apiKey: string,
+  apiUrl: string,
+  model: string,
+  messages: { role: string; content: string }[],
+  temperature: number = 0.3,
+): Promise<string> {
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  };
+
+  // 第一次尝试：带 response_format（OpenAI 兼容）
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        temperature,
+        response_format: { type: 'json_object' },
+        messages,
+      }),
+    });
+
+    // 如果是 400 错误，可能是不支持 response_format，降级重试
+    if (response.status === 400) {
+      const errText = await response.text();
+      console.warn('带 response_format 调用失败，降级重试:', errText.slice(0, 200));
+      throw new Error('response_format_not_supported');
+    }
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let errMsg = `API 请求失败 (${response.status})`;
+      try {
+        const errJson = JSON.parse(errText);
+        if (errJson.error?.message) errMsg = errJson.error.message;
+      } catch {
+        // ignore
+      }
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error('API 返回内容为空');
+    return content;
+  } catch (err) {
+    // 如果是不支持 response_format，降级不带参数重试
+    if (err instanceof Error && err.message === 'response_format_not_supported') {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model, temperature, messages }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        let errMsg = `API 请求失败 (${response.status})`;
+        try {
+          const errJson = JSON.parse(errText);
+          if (errJson.error?.message) errMsg = errJson.error.message;
+        } catch {
+          // ignore
+        }
+        throw new Error(errMsg);
+      }
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) throw new Error('API 返回内容为空');
+      return content;
+    }
+    throw err;
+  }
+}
+
+/**
  * 调用 OpenAI API 将阅读文本结构化为题目数据
  */
 export async function structureReadingText(
@@ -83,59 +194,29 @@ export async function structureReadingText(
     throw new Error('请先设置 OpenAI API Key');
   }
 
-  // 限制文本长度，防止 token 超限
-  const trimmedText = readingText.length > 60000 ? readingText.slice(0, 60000) : readingText;
+  // 限制文本长度，防止 token 超限（DeepSeek 等模型上下文较短，限制更严格）
+  const maxLen = model.includes('deepseek') ? 30000 : 60000;
+  const trimmedText = readingText.length > maxLen ? readingText.slice(0, maxLen) : readingText;
 
   const userPrompt = `以下是一份雅思阅读真题的文本内容，请按要求结构化：
 
 ${trimmedText}`;
 
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-    }),
-  });
+  const content = await callChatApi(
+    apiKey,
+    apiUrl,
+    model,
+    [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: userPrompt },
+    ],
+    0.3,
+  );
 
-  if (!response.ok) {
-    const errText = await response.text();
-    let errMsg = `API 请求失败 (${response.status})`;
-    try {
-      const errJson = JSON.parse(errText);
-      if (errJson.error?.message) {
-        errMsg = errJson.error.message;
-      }
-    } catch {
-      // ignore
-    }
-    throw new Error(errMsg);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error('API 返回内容为空');
-  }
-
-  let parsed: StructuredResult;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new Error('返回的 JSON 格式解析失败');
-  }
+  const parsed = extractJson(content) as StructuredResult;
 
   if (!parsed.passages || parsed.passages.length === 0) {
-    throw new Error('未能识别出任何 Passage，请检查 PDF 是否为雅思阅读真题');
+    throw new Error('未能识别出任何 Passage，请检查 PDF 是否为雅思阅读真题，或更换模型重试');
   }
 
   return convertToReadingTest(parsed, fileName);
