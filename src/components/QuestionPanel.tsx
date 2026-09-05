@@ -27,7 +27,7 @@ function SummaryNotesRenderer({ notesContent, questions, currentNumber, onAnswer
         if (blankCount === 0) {
           // 不带空格的上下文行，直接渲染
           return (
-            <div key={lineIdx} className="text-sm leading-7 text-foreground/80 pl-1">
+            <div key={lineIdx} className="text-sm leading-7 text-foreground/80">
               {line.trim()}
             </div>
           );
@@ -71,9 +71,8 @@ function SummaryNotesRenderer({ notesContent, questions, currentNumber, onAnswer
         });
 
         return (
-          <div key={lineIdx} className="text-sm leading-7 text-foreground/90 pl-1 relative">
-            <span className="absolute left-0 top-1 text-muted-foreground">·</span>
-            <span className="pl-3">{elements}</span>
+          <div key={lineIdx} className="text-sm leading-7 text-foreground/90">
+            {elements}
           </div>
         );
       })}
