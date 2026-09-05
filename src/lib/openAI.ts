@@ -1,7 +1,18 @@
 import type { IReadingTest, IQuestion, QuestionType, IPassage } from '@/data/mockReading';
 
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
-const MODEL = 'gpt-4o-mini';
+export const DEFAULT_API_URL = 'https://api.openai.com/v1/chat/completions';
+export const DEFAULT_MODEL = 'gpt-4o-mini';
+
+export const AVAILABLE_MODELS = [
+  { value: 'gpt-4o-mini', label: 'gpt-4o-mini（推荐，速度快成本低）' },
+  { value: 'gpt-4o', label: 'gpt-4o（精度更高，成本较高）' },
+  { value: 'gpt-4.1-mini', label: 'gpt-4.1-mini' },
+  { value: 'gpt-4.1', label: 'gpt-4.1' },
+  { value: 'deepseek-chat', label: 'deepseek-chat（DeepSeek，需自定义 API 地址）' },
+  { value: 'deepseek-reasoner', label: 'deepseek-reasoner（DeepSeek 推理模型）' },
+  { value: 'qwen-plus', label: 'qwen-plus（通义千问，需自定义 API 地址）' },
+  { value: 'glm-4-flash', label: 'glm-4-flash（智谱，需自定义 API 地址）' },
+];
 
 const SYSTEM_PROMPT = `你是一位专业的雅思考试内容结构化专家。请将用户提供的雅思阅读真题文本解析为严格的 JSON 格式。
 
@@ -65,26 +76,28 @@ export async function structureReadingText(
   apiKey: string,
   readingText: string,
   fileName: string,
+  model: string = DEFAULT_MODEL,
+  apiUrl: string = DEFAULT_API_URL,
 ): Promise<IReadingTest> {
   if (!apiKey.trim()) {
     throw new Error('请先设置 OpenAI API Key');
   }
 
-  // 限制文本长度，防止 token 超限（gpt-4o-mini context 128k）
+  // 限制文本长度，防止 token 超限
   const trimmedText = readingText.length > 60000 ? readingText.slice(0, 60000) : readingText;
 
   const userPrompt = `以下是一份雅思阅读真题的文本内容，请按要求结构化：
 
 ${trimmedText}`;
 
-  const response = await fetch(OPENAI_API_URL, {
+  const response = await fetch(apiUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       temperature: 0.3,
       response_format: { type: 'json_object' },
       messages: [

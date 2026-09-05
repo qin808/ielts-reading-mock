@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef, type DragEvent, type ChangeEvent } from 'react';
-import { Upload, FileText, Sparkles, CheckCircle, BookOpen, Clock, Key, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle, BookOpen, Clock, Key, Eye, EyeOff, Trash2, Cpu, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { storage, STORAGE_KEYS } from '@/lib/storage';
+import { AVAILABLE_MODELS, DEFAULT_MODEL, DEFAULT_API_URL } from '@/lib/openAI';
 
 interface UploadSectionProps {
   onFileSelected: (file: File, apiKey: string) => void;
@@ -29,6 +30,9 @@ export default function UploadSection({ onFileSelected, onUseMock, isParsing }: 
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [apiKey, setApiKey] = useState<string>(() => storage.getItem(STORAGE_KEYS.OPENAI_KEY) ?? '');
+  const [model, setModel] = useState<string>(() => storage.getItem(STORAGE_KEYS.MODEL) || DEFAULT_MODEL);
+  const [apiBaseUrl, setApiBaseUrl] = useState<string>(() => storage.getItem(STORAGE_KEYS.API_BASE_URL) || '');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -76,8 +80,14 @@ export default function UploadSection({ onFileSelected, onUseMock, isParsing }: 
       toast.error('请先设置 OpenAI API Key');
       return;
     }
-    // 保存 key
+    // 保存配置
     storage.setItem(STORAGE_KEYS.OPENAI_KEY, apiKey.trim());
+    storage.setItem(STORAGE_KEYS.MODEL, model);
+    if (apiBaseUrl.trim()) {
+      storage.setItem(STORAGE_KEYS.API_BASE_URL, apiBaseUrl.trim());
+    } else {
+      storage.removeItem(STORAGE_KEYS.API_BASE_URL);
+    }
     onFileSelected(selectedFile, apiKey.trim());
   }, [selectedFile, apiKey, onFileSelected]);
 
@@ -248,8 +258,51 @@ export default function UploadSection({ onFileSelected, onUseMock, isParsing }: 
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  仅保存在本地浏览器中，不会上传到任何服务器。使用 gpt-4o-mini 模型进行题目结构化。
+                  仅保存在本地浏览器中，不会上传到任何服务器。
                 </p>
+              </div>
+
+              {/* 模型选择 */}
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Cpu className="w-4 h-4 text-primary" />
+                  AI 模型
+                </label>
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  disabled={isParsing}
+                  className="w-full h-11 px-3 rounded-md border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:opacity-50"
+                >
+                  {AVAILABLE_MODELS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((s) => !s)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Globe className="w-3 h-3" />
+                  {showAdvanced ? '收起高级设置' : '自定义 API 地址（国内模型/代理）'}
+                </button>
+                {showAdvanced && (
+                  <div className="pt-1">
+                    <Input
+                      type="text"
+                      value={apiBaseUrl}
+                      onChange={(e) => setApiBaseUrl(e.target.value)}
+                      placeholder={`默认: ${DEFAULT_API_URL}`}
+                      className="h-10 text-sm"
+                      disabled={isParsing}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      使用 DeepSeek、通义千问等国内模型时，填写其兼容 OpenAI 格式的 API 地址，如 https://api.deepseek.com/v1/chat/completions
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* 拖拽上传区 */}

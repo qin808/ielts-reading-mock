@@ -29,4 +29,6 @@ export const storage = {
 export const STORAGE_KEYS = {
   STATE: 'state_v1',
   OPENAI_KEY: 'openai_key',
+  MODEL: 'openai_model',
+  API_BASE_URL: 'openai_api_base_url',
 } as const;

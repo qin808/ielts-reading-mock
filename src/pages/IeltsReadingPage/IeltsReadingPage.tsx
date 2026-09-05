@@ -18,7 +18,7 @@ import QuestionNav from '@/components/QuestionNav';
 import ResultPanel from '@/components/ResultPanel';
 import { MOCK_READING_TEST, type IReadingTest } from '@/data/mockReading';
 import { parsePdfText } from '@/lib/pdfParser';
-import { structureReadingText } from '@/lib/openAI';
+import { structureReadingText, DEFAULT_MODEL, DEFAULT_API_URL } from '@/lib/openAI';
 import { storage, STORAGE_KEYS } from '@/lib/storage';
 
 type ExamPhase = 'upload' | 'parsing' | 'exam' | 'result';
@@ -298,8 +298,12 @@ export default function IeltsReadingPage() {
       setParseStep(2);
       toast.info('正在结构化题目...');
 
+      // 读取用户选择的模型和 API 地址
+      const model = storage.getItem(STORAGE_KEYS.MODEL) || DEFAULT_MODEL;
+      const apiUrl = storage.getItem(STORAGE_KEYS.API_BASE_URL) || DEFAULT_API_URL;
+
       // 第二步：题目结构化（OpenAI API）
-      const parsedTest = await structureReadingText(apiKey, text, file.name);
+      const parsedTest = await structureReadingText(apiKey, text, file.name, model, apiUrl);
 
       setTest(parsedTest);
       setAnswers({});
