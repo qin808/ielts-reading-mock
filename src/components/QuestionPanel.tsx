@@ -93,6 +93,29 @@ function QuestionPanel({ questions, currentNumber, onAnswerChange, showResult }:
                 />
               ))}
             </div>
+
+            {/* 匹配题：统一显示选项列表 */}
+            {(group.type === 'matching_heading' ||
+              group.type === 'matching_information' ||
+              group.type === 'matching_name') &&
+              group.items[0]?.options &&
+              group.items[0].options.length > 0 && (
+                <div className="mt-2 pt-4 border-t border-border/40">
+                  <div className="text-xs text-muted-foreground mb-3 font-medium">选项列表</div>
+                  <div className="space-y-2">
+                    {group.items[0].options.map((opt, i) => {
+                      const letter = opt.match(/^([A-Z]{1,2}|[ivxlcdm]+)\.?\s*/i)?.[1]?.toUpperCase() ?? String.fromCharCode(65 + i);
+                      const text = opt.replace(/^[A-Z]{1,2}\.?\s*/i, '').replace(/^[ivxlcdm]+\.?\s*/i, '');
+                      return (
+                        <div key={i} className="flex gap-2 px-3 py-2 rounded-md border border-border/50 bg-muted/20">
+                          <span className="shrink-0 w-6 text-sm font-semibold text-primary">{letter}</span>
+                          <span className="text-sm text-foreground/90 leading-relaxed">{text}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
           </div>
         ))}
         {questions.length === 0 && (
@@ -120,6 +143,10 @@ interface QuestionItemProps {
 
 function QuestionItem({ question, isCurrent, onAnswerChange, showResult }: QuestionItemProps) {
   const id = `q-${question.id}`;
+  const isMatching =
+    question.type === 'matching_heading' ||
+    question.type === 'matching_information' ||
+    question.type === 'matching_name';
   const isCorrect = useMemo(() => {
     if (!showResult) return null;
     const ua = question.userAnswer;
@@ -143,19 +170,27 @@ function QuestionItem({ question, isCurrent, onAnswerChange, showResult }: Quest
       )}
     >
       {/* 题干 */}
-      <div className="flex gap-3 mb-3">
+      <div className="flex gap-3 items-start">
         <span className="shrink-0 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-semibold">
           {question.number}
         </span>
         <div className="flex-1 text-sm text-foreground leading-relaxed pt-1">
           {question.questionText}
         </div>
+        {/* 匹配题：下拉框与题干同行 */}
+        {isMatching && (
+          <div className="shrink-0 pt-0.5">
+            {renderOptions(question, id, onAnswerChange, showResult)}
+          </div>
+        )}
       </div>
 
-      {/* 选项区 */}
-      <div className="pl-10 space-y-2">
-        {renderOptions(question, id, onAnswerChange, showResult)}
-      </div>
+      {/* 选项区（非匹配题） */}
+      {!isMatching && (
+        <div className="pl-10 mt-3 space-y-2">
+          {renderOptions(question, id, onAnswerChange, showResult)}
+        </div>
+      )}
 
       {/* 结果区 */}
       {showResult && (
@@ -197,14 +232,47 @@ function renderOptions(
     ? ['TRUE', 'FALSE', 'NOT GIVEN']
     : rawOptions;
 
-  // 单选类：TRUE/FALSE/NOT GIVEN、单选题、匹配题
+  // 匹配题：题干 + 下拉选择框（选项列表在题目组下方统一展示）
   if (
     options &&
-    (type === 'true_false_not_given' ||
-      type === 'multiple_choice_single' ||
-      type === 'matching_heading' ||
-      type === 'matching_information' ||
-      type === 'matching_name')
+    (type === 'matching_heading' || type === 'matching_information' || type === 'matching_name')
+  ) {
+    const selected = (userAnswer as string) ?? '';
+    return (
+      <div className="flex items-center gap-3">
+        <select
+          value={selected}
+          disabled={showResult}
+          onChange={(e) => onAnswerChange(question.id, e.target.value)}
+          className={cn(
+            'h-9 min-w-[80px] px-3 rounded-md border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:opacity-60',
+            showResult && selected === correctAnswer && 'bg-success/15 border-success/50 text-success',
+            showResult && selected && selected !== correctAnswer && 'bg-destructive/15 border-destructive/50',
+          )}
+        >
+          <option value="">-</option>
+          {options.map((opt) => {
+            const letter = opt.match(/^([A-Z]{1,2}|[ivxlcdm]+)\.?\s*/i)?.[1]?.toUpperCase() ?? opt;
+            return (
+              <option key={opt} value={opt}>
+                {letter}
+              </option>
+            );
+          })}
+        </select>
+        {showResult && (
+          <span className="text-xs text-muted-foreground">
+            正确: {String(correctAnswer).match(/^([A-Z]{1,2}|[ivxlcdm]+)\.?/i)?.[1] ?? String(correctAnswer)}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  // 单选类：TRUE/FALSE/NOT GIVEN、单选题
+  if (
+    options &&
+    (type === 'true_false_not_given' || type === 'multiple_choice_single')
   ) {
     return (
       <div className="space-y-2">
