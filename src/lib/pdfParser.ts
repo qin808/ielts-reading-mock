@@ -1,52 +1,163 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import Tesseract from 'tesseract.js';
 
-// 配置 worker
+// 配置 pdf.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
 export interface PdfParseResult {
   text: string;
   numPages: number;
+  usedOcr: boolean;
+}
+
+export interface OcrProgress {
+  phase: string;
+  progress: number;
+  currentPage: number;
+  totalPages: number;
+}
+
+// 文本长度低于此值判定为扫描件
+const SCANNED_THRESHOLD = 100;
+// OCR 渲染缩放比例（平衡准确率和速度）
+const OCR_SCALE = 1.8;
+// OCR 最大页数（避免太慢）
+const MAX_OCR_PAGES = 15;
+
+/**
+ * 对图片进行 OCR 识别
+ */
+export async function ocrImage(
+  imageSource: string | HTMLCanvasElement | File,
+  onProgress?: (progress: OcrProgress) => void,
+): Promise<string> {
+  onProgress?.({ phase: 'loading_language', progress: 0, currentPage: 0, totalPages: 1 });
+
+  const result = await Tesseract.recognize(imageSource, 'chi_sim+eng', {
+    logger: (m) => {
+      if (m.status === 'recognizing text') {
+        onProgress?.({
+          phase: 'recognizing',
+          progress: Math.round(m.progress * 100),
+          currentPage: 1,
+          totalPages: 1,
+        });
+      }
+    },
+  });
+
+  onProgress?.({ phase: 'done', progress: 100, currentPage: 1, totalPages: 1 });
+  return result.data.text;
 }
 
 /**
- * 解析 PDF 文件，提取全部页面的纯文本内容
+ * 将 PDF 页面渲染为 canvas
  */
-export async function parsePdfText(file: File): Promise<PdfParseResult> {
+async function renderPageToCanvas(
+  page: pdfjsLib.PDFPageProxy,
+  scale: number = OCR_SCALE,
+): Promise<HTMLCanvasElement> {
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d')!;
+  await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+  return canvas;
+}
+
+/**
+ * 对扫描件 PDF 逐页 OCR
+ */
+export async function ocrScannedPdf(
+  pdf: pdfjsLib.PDFDocumentProxy,
+  onProgress?: (progress: OcrProgress) => void,
+): Promise<string> {
+  const numPages = Math.min(pdf.numPages, MAX_OCR_PAGES);
+  const pageTexts: string[] = [];
+
+  for (let i = 1; i <= numPages; i++) {
+    onProgress?.({ phase: 'rendering', progress: Math.round((i / numPages) * 100), currentPage: i, totalPages: numPages });
+
+    const page = await pdf.getPage(i);
+    const canvas = await renderPageToCanvas(page);
+
+    onProgress?.({ phase: 'recognizing', progress: Math.round((i / numPages) * 100), currentPage: i, totalPages: numPages });
+
+    const result = await Tesseract.recognize(canvas, 'chi_sim+eng');
+    pageTexts.push(result.data.text);
+
+    // 清理 canvas 释放内存
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+
+  return pageTexts.join('\n\n');
+}
+
+/**
+ * 解析 PDF 文件，自动判断是否为扫描件并 OCR
+ */
+export async function parsePdfText(
+  file: File,
+  onProgress?: (progress: OcrProgress) => void,
+): Promise<PdfParseResult> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const numPages = pdf.numPages;
+
+  // 第一步：尝试提取文本
+  onProgress?.({ phase: 'extracting_text', progress: 0, currentPage: 0, totalPages: numPages });
   const pageTexts: string[] = [];
 
   for (let i = 1; i <= numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    // 按 y 坐标排序行，保持阅读顺序
     const items = content.items as { str: string; transform: number[] }[];
     const lines: { y: number; text: string }[] = [];
 
     items.forEach((item) => {
       if (!item.str || !item.str.trim()) return;
       const y = Math.round(item.transform[5]);
-      const x = item.transform[4];
       const existingLine = lines.find((l) => Math.abs(l.y - y) < 3);
       if (existingLine) {
-        // 同一行，追加文本
         existingLine.text += item.str;
       } else {
         lines.push({ y, text: item.str });
       }
-      void x;
     });
 
-    // 按 y 降序（从上到下）
     lines.sort((a, b) => b.y - a.y);
-    const pageText = lines.map((l) => l.text).join('\n');
-    pageTexts.push(pageText);
+    pageTexts.push(lines.map((l) => l.text).join('\n'));
   }
 
-  return {
-    text: pageTexts.join('\n\n'),
-    numPages,
-  };
+  const text = pageTexts.join('\n\n');
+
+  // 判断是否为扫描件
+  if (text.trim().length < SCANNED_THRESHOLD) {
+    onProgress?.({ phase: 'scanned_detected', progress: 0, currentPage: 0, totalPages: numPages });
+    const ocrText = await ocrScannedPdf(pdf, onProgress);
+    return { text: ocrText, numPages, usedOcr: true };
+  }
+
+  return { text, numPages, usedOcr: false };
+}
+
+/**
+ * 解析图片文件（PNG/JPG），直接 OCR
+ */
+export async function parseImageFile(
+  file: File,
+  onProgress?: (progress: OcrProgress) => void,
+): Promise<PdfParseResult> {
+  const text = await ocrImage(file, onProgress);
+  return { text, numPages: 1, usedOcr: true };
+}
+
+/**
+ * 判断文件是否为图片
+ */
+export function isImageFile(file: File): boolean {
+  return file.type === 'image/png' || file.type === 'image/jpeg' || file.type === 'image/jpg' || file.type === 'image/webp';
 }

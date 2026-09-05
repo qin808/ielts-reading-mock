@@ -17,7 +17,7 @@ import QuestionPanel from '@/components/QuestionPanel';
 import QuestionNav from '@/components/QuestionNav';
 import ResultPanel from '@/components/ResultPanel';
 import { MOCK_READING_TEST, type IReadingTest } from '@/data/mockReading';
-import { parsePdfText } from '@/lib/pdfParser';
+import { parsePdfText, parseImageFile, isImageFile, type OcrProgress } from '@/lib/pdfParser';
 import { structureReadingText, gradeAnswers, DEFAULT_MODEL, DEFAULT_API_URL } from '@/lib/openAI';
 import { storage, STORAGE_KEYS } from '@/lib/storage';
 
@@ -353,13 +353,33 @@ export default function IeltsReadingPage() {
     setIsParsing(true);
     setParseStep(1);
     try {
-      // 第一步：PDF 解析（pdf.js 本地解析）
-      toast.info('正在解析 PDF 文本...', { duration: 3000 });
-      const { text, numPages } = await parsePdfText(file);
-      if (!text || text.trim().length < 100) {
-        throw new Error('PDF 内容提取失败，请确认是文字版 PDF（非扫描件/图片）');
+      const isImage = isImageFile(file);
+      const ocrProgress = (p: OcrProgress) => {
+        if (p.phase === 'scanned_detected') {
+          toast.info('检测到扫描件，正在 OCR 识别...', { duration: 4000 });
+        } else if (p.phase === 'recognizing' && p.totalPages > 1) {
+          console.info(`OCR 进度: 第 ${p.currentPage}/${p.totalPages} 页 (${p.progress}%)`);
+        }
+      };
+
+      // 第一步：提取文本（PDF 或图片）
+      if (isImage) {
+        toast.info('正在识别图片文字...', { duration: 4000 });
+      } else {
+        toast.info('正在解析 PDF 文本...', { duration: 3000 });
       }
-      console.info(`PDF 解析完成，共 ${numPages} 页，文本长度 ${text.length}`);
+
+      const { text, numPages, usedOcr } = isImage
+        ? await parseImageFile(file, ocrProgress)
+        : await parsePdfText(file, ocrProgress);
+
+      if (!text || text.trim().length < 50) {
+        throw new Error('内容提取失败，请确认文件清晰可读（扫描件/图片需文字清晰）');
+      }
+      console.info(`解析完成，共 ${numPages} 页，文本长度 ${text.length}，OCR: ${usedOcr}`);
+      if (usedOcr) {
+        toast.success('OCR 识别完成', { duration: 2000 });
+      }
 
       setParseStep(2);
       toast.info('正在 AI 结构化题目...', { duration: 5000 });
@@ -380,7 +400,7 @@ export default function IeltsReadingPage() {
       setPhase('exam');
       toast.success('解析成功，开始模考');
     } catch (err) {
-      console.error('PDF parsing failed:', err);
+      console.error('Parsing failed:', err);
       const errMsg = err instanceof Error ? err.message : '未知错误';
       toast.error(`解析失败：${errMsg}`, { duration: 6000 });
     } finally {

@@ -52,8 +52,8 @@ export default function UploadSection({ onFileSelected, onUseMock, isParsing }: 
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       const file = files[0];
-      if (file.type !== 'application/pdf') {
-        toast.error('请上传 PDF 格式的文件');
+      if (file.type !== 'application/pdf' && !file.type.startsWith('image/')) {
+        toast.error('请上传 PDF 或图片文件');
         return;
       }
       setSelectedFile(file);
@@ -65,8 +65,8 @@ export default function UploadSection({ onFileSelected, onUseMock, isParsing }: 
   const handleFileChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        toast.error('请上传 PDF 格式的文件');
+      if (file.type !== 'application/pdf' && !file.type.startsWith('image/')) {
+        toast.error('请上传 PDF 或图片文件');
         return;
       }
       setSelectedFile(file);
@@ -326,7 +326,7 @@ export default function UploadSection({ onFileSelected, onUseMock, isParsing }: 
                 <input
                   ref={inputRef}
                   type="file"
-                  accept="application/pdf"
+                  accept="application/pdf,image/png,image/jpeg,image/jpg,image/webp"
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -334,12 +334,12 @@ export default function UploadSection({ onFileSelected, onUseMock, isParsing }: 
                   <Upload className="w-8 h-8 text-primary" />
                 </div>
                 <h3 className="text-lg font-semibold text-foreground mb-1">
-                  {selectedFile ? selectedFile.name : '上传剑雅阅读真题 PDF'}
+                  {selectedFile ? selectedFile.name : '上传剑雅阅读真题 PDF 或图片'}
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   {selectedFile
                     ? `文件大小: ${formatFileSize(selectedFile.size)}`
-                    : '拖拽文件到此处，或点击选择文件 · 仅支持 .pdf 格式'}
+                    : '拖拽文件到此处，或点击选择文件 · 支持 PDF / PNG / JPG，扫描件自动 OCR'}
                 </p>
                 {selectedFile && (
                   <div className="mt-3 flex items-center gap-2 text-sm text-success">
