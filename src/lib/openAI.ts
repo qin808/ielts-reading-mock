@@ -26,6 +26,7 @@ const SYSTEM_PROMPT = `你是一位专业的雅思考试内容结构化专家。
         {
           "question_type": "TRUE_FALSE_NOT_GIVEN | MULTIPLE_CHOICE_SINGLE | MULTIPLE_CHOICE_MULTI | FILL_BLANK_SUMMARY | FILL_BLANK_SENTENCE | MATCHING_HEADING | MATCHING_INFORMATION | MATCHING_PERSON",
           "instructions": "题目组说明文字，如题型介绍和要求",
+          "notes_content": "仅摘要填空题(FILL_BLANK_SUMMARY)需要：完整的笔记原文，保留所有上下文行（包括不带空格的描述行），用 _____（5个下划线）标记每个空格位置，用 \\n 换行",
           "questions": [
             {
               "number": 1,
@@ -45,13 +46,14 @@ const SYSTEM_PROMPT = `你是一位专业的雅思考试内容结构化专家。
 1. 严格识别 Passage 1/2/3 三篇文章及其对应的题目
 2. 题目编号为全局连续编号（1-40）
 3. 选项数组中保留 A./B./C. 前缀
-4. 填空题（FILL_BLANK_SUMMARY / FILL_BLANK_SENTENCE）的 question_text 必须包含完整的句子上下文，用 _____（5个下划线）标记空格位置。例如："The ditch and henge were dug, possibly using tools made from _____." 多空题用多个 _____ 依次标记。
-5. 填空题若有多空，answer 为数组，按空的顺序排列
-6. 多选题 answer 为数组
-7. 若 PDF 中未提供正确答案，answer 字段留空字符串
-8. passage_content 保留原文的段落结构，用 \\n\\n 分隔段落
-9. passage_content 中必须过滤掉页码（如纯数字行）、页眉页脚（如 "Test 2"、"Cambridge IELTS"、考试机构名称等）、角标、脚注标记等非正文内容
-10. 只输出 JSON，不要输出任何解释性文字或 markdown 标记`;
+4. 摘要填空题（FILL_BLANK_SUMMARY）必须填写 notes_content 字段：包含完整的笔记原文，保留所有上下文行（包括不带空格的纯描述行），每个空格用 _____（5个下划线）标记，行与行之间用 \\n 分隔。questions 数组中每个题目对应一个空格，按空格出现顺序编号。
+5. 句子填空题（FILL_BLANK_SENTENCE）的 question_text 必须包含完整的句子上下文，用 _____ 标记空格位置
+6. 填空题若有多空，answer 为数组，按空的顺序排列
+7. 多选题 answer 为数组
+8. 若 PDF 中未提供正确答案，answer 字段留空字符串
+9. passage_content 保留原文的段落结构，用 \\n\\n 分隔段落
+10. passage_content 中必须过滤掉页码（如纯数字行）、页眉页脚（如 "Test 2"、"Cambridge IELTS"、考试机构名称等）、角标、脚注标记等非正文内容
+11. 只输出 JSON，不要输出任何解释性文字或 markdown 标记`;
 
 export interface StructuredResult {
   passages: {
@@ -60,6 +62,7 @@ export interface StructuredResult {
     question_groups: {
       question_type: string;
       instructions: string;
+      notes_content?: string;
       questions: {
         number: number;
         question_text: string;
@@ -257,6 +260,7 @@ function convertToReadingTest(data: StructuredResult, fileName: string): IReadin
     groups.forEach((gRaw) => {
       const questionType = mapQuestionType(gRaw.question_type);
       const qs = gRaw.questions || [];
+      const notesContent = gRaw.notes_content;
 
       qs.forEach((q) => {
         const options = q.options && q.options.length > 0 ? q.options : undefined;
@@ -271,6 +275,7 @@ function convertToReadingTest(data: StructuredResult, fileName: string): IReadin
           groupRange: undefined,
           questionText: q.question_text,
           options,
+          notesContent: questionType === 'fill_blank_summary' ? notesContent : undefined,
           correctAnswer,
           isAnswered: false,
         });

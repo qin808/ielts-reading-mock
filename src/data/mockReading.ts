@@ -20,6 +20,7 @@ export interface IQuestion {
   questionText: string;
   options?: string[];
   blanks?: number;
+  notesContent?: string; // 摘要填空题的完整笔记内容（含_____标记）
   correctAnswer: string | string[];
   userAnswer?: string | string[];
   isAnswered: boolean;

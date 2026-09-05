@@ -2,6 +2,85 @@ import { memo, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { IQuestion, QuestionType } from '@/data/mockReading';
 
+interface SummaryNotesRendererProps {
+  notesContent: string;
+  questions: IQuestion[];
+  currentNumber: number;
+  onAnswerChange: (questionId: string, answer: string | string[]) => void;
+  showResult?: boolean;
+}
+
+/**
+ * 摘要填空题统一渲染器：渲染完整笔记，把 _____ 替换为输入框
+ * 保留不带空格的上下文行
+ */
+function SummaryNotesRenderer({ notesContent, questions, currentNumber, onAnswerChange, showResult }: SummaryNotesRendererProps) {
+  // 按行拆分笔记
+  const lines = notesContent.split(/\n/).filter((l) => l.trim().length > 0);
+  let blankIndex = 0;
+
+  return (
+    <div className="space-y-2">
+      {lines.map((line, lineIdx) => {
+        // 统计这一行有几个 _____
+        const blankCount = (line.match(/_____/g) || []).length;
+        if (blankCount === 0) {
+          // 不带空格的上下文行，直接渲染
+          return (
+            <div key={lineIdx} className="text-sm leading-7 text-foreground/80 pl-1">
+              {line.trim()}
+            </div>
+          );
+        }
+
+        // 带空格的行，把 _____ 替换为输入框
+        const parts = line.split('_____');
+        const elements: React.ReactNode[] = [];
+        parts.forEach((part, i) => {
+          elements.push(<span key={`text-${i}`}>{part}</span>);
+          if (i < parts.length - 1) {
+            const qIndex = blankIndex;
+            const q = questions[qIndex];
+            if (q) {
+              const val = (q.userAnswer as string) ?? '';
+              const ca = q.correctAnswer as string;
+              const isCorrect = showResult && val.trim().toLowerCase() === (ca ?? '').toLowerCase();
+              const isWrong = showResult && val && val.trim().toLowerCase() !== (ca ?? '').toLowerCase();
+              const isCurrent = q.number === currentNumber;
+              elements.push(
+                <input
+                  key={`input-${qIndex}`}
+                  type="text"
+                  value={val}
+                  disabled={showResult}
+                  onChange={(e) => onAnswerChange(q.id, e.target.value)}
+                  className={cn(
+                    'inline-block w-16 h-6 px-1 mx-1 text-sm text-center border rounded align-middle focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary placeholder:text-muted-foreground/50 placeholder:text-xs',
+                    isCurrent && 'ring-2 ring-primary/40 border-primary',
+                    showResult && isCorrect && 'bg-success/15 border-success/50 text-success-foreground',
+                    showResult && isWrong && 'bg-destructive/15 border-destructive/50',
+                  )}
+                  placeholder={String(q.number)}
+                />
+              );
+            } else {
+              elements.push(<span key={`empty-${qIndex}`} className="inline-block w-16 h-6 mx-1 border border-dashed border-border/50 rounded align-middle" />);
+            }
+            blankIndex++;
+          }
+        });
+
+        return (
+          <div key={lineIdx} className="text-sm leading-7 text-foreground/90 pl-1 relative">
+            <span className="absolute left-0 top-1 text-muted-foreground">·</span>
+            <span className="pl-3">{elements}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 interface QuestionPanelProps {
   questions: IQuestion[];
   currentNumber: number;
@@ -82,20 +161,33 @@ function QuestionPanel({ questions, currentNumber, onAnswerChange, showResult }:
             )}
 
             {/* 题目列表 */}
-            <div className={cn(
-              'space-y-3',
-              group.type === 'fill_blank_summary' && 'border border-border/60 rounded-lg p-4 bg-muted/10',
-            )}>
-              {group.items.map((q) => (
-                <QuestionItem
-                  key={q.id}
-                  question={q}
-                  isCurrent={q.number === currentNumber}
+            {group.type === 'fill_blank_summary' && group.items[0]?.notesContent ? (
+              // 摘要填空题：统一渲染完整笔记（含不带空格的上下文行）
+              <div className="border border-border/60 rounded-lg p-4 bg-muted/10">
+                <SummaryNotesRenderer
+                  notesContent={group.items[0].notesContent}
+                  questions={group.items}
+                  currentNumber={currentNumber}
                   onAnswerChange={onAnswerChange}
                   showResult={showResult}
                 />
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className={cn(
+                'space-y-3',
+                group.type === 'fill_blank_summary' && 'border border-border/60 rounded-lg p-4 bg-muted/10',
+              )}>
+                {group.items.map((q) => (
+                  <QuestionItem
+                    key={q.id}
+                    question={q}
+                    isCurrent={q.number === currentNumber}
+                    onAnswerChange={onAnswerChange}
+                    showResult={showResult}
+                  />
+                ))}
+              </div>
+            )}
 
             {/* 匹配题：统一显示选项列表 */}
             {(group.type === 'matching_heading' ||
