@@ -1,71 +1,139 @@
-# 部署指南
+# 雅思阅读模考助手 - 部署指南
 
-## 部署到 Vercel
+## 项目概述
 
-### 1. 准备代码
+一个纯前端雅思阅读模考应用，支持：
+- 上传剑雅阅读真题 PDF，自动解析为模考题目
+- 用户自带 OpenAI API Key（本地存储，不上传服务器）
+- 左右分栏模考界面、60 分钟倒计时、多题型作答
+- 自动判分、答案对比、雅思 Band 分换算
 
-将整个项目（不含 node_modules）推送到 GitHub/GitLab 仓库。
+技术栈：React 19 + TypeScript + Vite 7 + Tailwind CSS 4 + pdf.js
 
-### 2. 修改 package.json（首次部署前）
+---
 
-原项目的 `package.json` 中的 build 脚本是妙搭平台专用的，部署 Vercel 前需修改：
+## 一、推送到 GitHub
 
-```bash
-# 修改 build 脚本为标准 vite build
-npm pkg set scripts.build="vite build --config vite.config.vercel.ts"
-npm pkg set scripts.dev="vite --config vite.config.vercel.ts"
-npm pkg delete scripts.prepare
-```
+### 1. 在 GitHub 创建仓库
 
-或者手动编辑 `package.json` 的 `scripts` 部分：
+1. 登录 [github.com](https://github.com)
+2. 点击右上角 **+** → **New repository**
+3. 填写仓库名（如 `ielts-reading-mock`），选择 Public 或 Private
+4. **不要**勾选 "Initialize this repository with README"（因为本地已有代码）
+5. 点击 **Create repository**
 
-```json
-{
-  "scripts": {
-    "dev": "vite --config vite.config.vercel.ts",
-    "build": "vite build --config vite.config.vercel.ts",
-    "preview": "vite preview"
-  }
-}
-```
+### 2. 推送本地代码
 
-### 3. 移除平台依赖（可选，但推荐）
+在项目根目录下执行：
 
 ```bash
-npm uninstall @lark-apaas/client-toolkit-lite @lark-apaas/coding-presets-react @lark-apaas/coding-preset-vite-react
+# 关联远程仓库（替换为你的 GitHub 用户名和仓库名）
+git remote add origin https://github.com/你的用户名/ielts-reading-mock.git
+
+# 推送代码
+git branch -M main
+git push -u origin main
 ```
 
-### 4. 在 Vercel 中部署
+如果提示输入凭据，使用 GitHub 用户名 + **Personal Access Token**（不是密码）。
+Token 获取：GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token，勾选 `repo` 权限。
 
-1. 登录 [vercel.com](https://vercel.com)
-2. 点击 "Add New" → "Project"
-3. 选择你的 GitHub 仓库
-4. Framework Preset 选择 **Vite**
-5. Build Command 和 Output Directory 会自动从 `vercel.json` 读取
-6. 点击 "Deploy"
+---
 
-## 本地开发
+## 二、部署到 Vercel
+
+### 1. 导入项目
+
+1. 登录 [vercel.com](https://vercel.com)（可用 GitHub 账号登录）
+2. 点击 **Add New** → **Project**
+3. 在 **Import Git Repository** 中找到你的仓库，点击 **Import**
+
+### 2. 配置项目
+
+Vercel 会自动识别 Vite 项目，配置项如下（一般无需修改）：
+
+| 配置项 | 值 |
+|---|---|
+| Framework Preset | Vite |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Install Command | `npm install` |
+
+项目根目录已包含 `vercel.json`，会自动读取以上配置。
+
+### 3. 部署
+
+点击 **Deploy**，等待 1-2 分钟构建完成。
+
+部署成功后会获得一个 `https://xxx.vercel.app` 的访问地址。
+
+### 4. 自定义域名（可选）
+
+在 Vercel 项目 → Settings → Domains 中添加你自己的域名，按提示配置 DNS 即可。
+
+---
+
+## 三、使用说明
+
+### 1. 获取 OpenAI API Key
+
+1. 登录 [platform.openai.com](https://platform.openai.com)
+2. 进入 **API keys** 页面
+3. 点击 **Create new secret key**，复制生成的 Key（以 `sk-` 开头）
+
+> 注意：API Key 仅保存在用户浏览器的 localStorage 中，不会上传到任何服务器。
+
+### 2. 使用应用
+
+1. 打开部署后的网站
+2. 在上传页面输入你的 OpenAI API Key
+3. 上传雅思阅读真题 PDF（剑桥雅思真题格式）
+4. 等待 AI 解析（约 10-30 秒）
+5. 开始模考作答
+6. 交卷后查看得分和答案解析
+
+也可以点击「使用示例真题体验」，无需 API Key 即可体验完整模考流程。
+
+---
+
+## 四、本地开发
 
 ```bash
+# 安装依赖
 npm install
-vite --config vite.config.vercel.ts
+
+# 启动开发服务器
+npm run dev
+
+# 生产构建
+npm run build
+
+# 预览构建产物
+npm run preview
 ```
 
-## 本地构建
+---
 
-```bash
-vite build --config vite.config.vercel.ts
-```
+## 五、常见问题
 
-构建产物在 `dist/` 目录，可以直接上传到任何静态文件托管服务。
+### Q: OpenAI API 调用失败怎么办？
 
-## OpenAI API 说明
+A: 检查以下几点：
+1. API Key 是否正确（以 `sk-` 开头）
+2. 账户是否有余额（OpenAI API 是付费服务）
+3. 网络是否能访问 `api.openai.com`（国内网络可能需要代理）
 
-由于浏览器 CORS 限制，前端直接调用 `api.openai.com` 可能被浏览器拦截。
-如果遇到 CORS 问题，可以使用以下方案：
+### Q: PDF 解析结果不准确怎么办？
 
-1. **Cloudflare Workers 反向代理**（推荐，免费额度足够个人使用）
-2. **Vercel Functions / Edge Functions** 代理
-3. **自建 Node.js 后端代理**
+A: 
+1. 确保 PDF 是文字版（非扫描件），扫描件无法提取文本
+2. 尽量使用剑桥雅思官方真题 PDF
+3. 可以尝试重新上传，AI 解析有一定随机性
 
-将代理后的 API 地址填入 `src/lib/openAI.ts` 中的 `OPENAI_API_URL` 即可。
+### Q: 如何更换 AI 模型？
+
+A: 编辑 `src/lib/openAI.ts`，修改 `MODEL` 常量即可，如改为 `gpt-4o`。
+
+### Q: 支持国内大模型吗？
+
+A: 当前代码使用 OpenAI 兼容接口。如果使用国内大模型（如 DeepSeek、通义千问、智谱等），只要它们提供 OpenAI 兼容的 API，修改 `src/lib/openAI.ts` 中的 `OPENAI_API_URL` 和 `MODEL` 即可。
