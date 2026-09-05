@@ -82,7 +82,10 @@ function QuestionPanel({ questions, currentNumber, onAnswerChange, showResult }:
             )}
 
             {/* 题目列表 */}
-            <div className="space-y-5">
+            <div className={cn(
+              'space-y-3',
+              group.type === 'fill_blank_summary' && 'border border-border/60 rounded-lg p-4 bg-muted/10',
+            )}>
               {group.items.map((q) => (
                 <QuestionItem
                   key={q.id}
@@ -150,6 +153,7 @@ function QuestionItem({ question, isCurrent, onAnswerChange, showResult }: Quest
   const isFillBlank =
     question.type === 'fill_blank_summary' ||
     question.type === 'fill_blank_sentence';
+  const isFillBlankSummary = question.type === 'fill_blank_summary';
   const isCorrect = useMemo(() => {
     if (!showResult) return null;
     const ua = question.userAnswer;
@@ -166,17 +170,21 @@ function QuestionItem({ question, isCurrent, onAnswerChange, showResult }: Quest
     <div
       id={`question-${question.number}`}
       className={cn(
-        'p-4 rounded-lg transition-all scroll-mt-4',
-        isCurrent ? 'bg-primary/5 ring-1 ring-primary/30' : 'bg-transparent',
-        showResult && isCorrect === true && 'bg-success/10 ring-1 ring-success/30',
-        showResult && isCorrect === false && 'bg-destructive/10 ring-1 ring-destructive/30',
+        'rounded-lg transition-all scroll-mt-4',
+        isFillBlankSummary ? 'p-1' : 'p-4',
+        isCurrent && !isFillBlankSummary && 'bg-primary/5 ring-1 ring-primary/30',
+        isCurrent && isFillBlankSummary && 'bg-primary/5',
+        showResult && isCorrect === true && !isFillBlankSummary && 'bg-success/10 ring-1 ring-success/30',
+        showResult && isCorrect === false && !isFillBlankSummary && 'bg-destructive/10 ring-1 ring-destructive/30',
       )}
     >
       {/* 题干（填空题的题干含空格标记，在选项区统一渲染） */}
       <div className="flex gap-3 items-start">
-        <span className="shrink-0 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-semibold">
-          {question.number}
-        </span>
+        {!isFillBlankSummary && (
+          <span className="shrink-0 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-semibold">
+            {question.number}
+          </span>
+        )}
         {!isFillBlank && (
           <div className="flex-1 text-sm text-foreground leading-relaxed pt-1">
             {question.questionText}
@@ -192,7 +200,7 @@ function QuestionItem({ question, isCurrent, onAnswerChange, showResult }: Quest
 
       {/* 选项区（非匹配题） */}
       {!isMatching && (
-        <div className={cn('mt-3 space-y-2', isFillBlank ? 'pl-10' : 'pl-10')}>
+        <div className={cn('mt-3 space-y-2', isFillBlankSummary ? 'pl-0' : 'pl-10')}>
           {renderOptions(question, id, onAnswerChange, showResult)}
         </div>
       )}
@@ -359,13 +367,16 @@ function renderOptions(
     const ua = Array.isArray(userAnswer) ? userAnswer : userAnswer ? [userAnswer] : [];
     const ca = Array.isArray(correctAnswer) ? correctAnswer : [correctAnswer];
     const qText = question.questionText || '';
+    const isSummary = type === 'fill_blank_summary';
 
-    // 生成单个填空输入框
+    // 生成单个填空输入框，占位符显示题号
     const renderInput = (index: number) => {
       const blankNum = index + 1;
       const val = ua[index] ?? '';
       const isCorrectBlank = showResult && val.trim().toLowerCase() === (ca[index] ?? '').toLowerCase();
       const isWrongBlank = showResult && val && val.trim().toLowerCase() !== (ca[index] ?? '').toLowerCase();
+      // 单空题显示题号，多空题显示题号+空序号
+      const placeholder = count === 1 ? String(question.number) : `${question.number}.${blankNum}`;
       return (
         <input
           key={`blank-${index}`}
@@ -378,11 +389,11 @@ function renderOptions(
             onAnswerChange(question.id, next);
           }}
           className={cn(
-            'inline-block w-28 h-7 px-2 mx-1 text-sm border border-input rounded-md align-middle focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary',
+            'inline-block w-20 h-7 px-2 mx-1 text-sm text-center border border-input rounded align-middle focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary placeholder:text-muted-foreground/60 placeholder:text-xs',
             showResult && isCorrectBlank && 'bg-success/15 border-success/50 text-success-foreground',
             showResult && isWrongBlank && 'bg-destructive/15 border-destructive/50',
           )}
-          placeholder={`第${blankNum}空`}
+          placeholder={placeholder}
         />
       );
     };
@@ -404,7 +415,11 @@ function renderOptions(
         }
       }
       return (
-        <div className="text-sm leading-8 text-foreground/90">
+        <div className={cn(
+          'text-sm leading-8 text-foreground/90',
+          isSummary && 'pl-1 relative',
+        )}>
+          {isSummary && <span className="absolute left-0 top-1 text-muted-foreground">·</span>}
           {elements}
         </div>
       );
