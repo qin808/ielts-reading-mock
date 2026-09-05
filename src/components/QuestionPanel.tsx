@@ -190,7 +190,12 @@ function renderOptions(
   onAnswerChange: (id: string, answer: string | string[]) => void,
   showResult?: boolean,
 ) {
-  const { type, options, userAnswer, correctAnswer, blanks } = question;
+  const { type, options: rawOptions, userAnswer, correctAnswer, blanks } = question;
+
+  // 判断题使用固定选项
+  const options = type === 'true_false_not_given' && (!rawOptions || rawOptions.length === 0)
+    ? ['TRUE', 'FALSE', 'NOT GIVEN']
+    : rawOptions;
 
   // 单选类：TRUE/FALSE/NOT GIVEN、单选题、匹配题
   if (
