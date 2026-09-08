@@ -1,9 +1,9 @@
-import { memo, useMemo } from 'react';
-import { Award, Clock, Target, RotateCcw, Upload, CheckCircle, XCircle, MinusCircle } from 'lucide-react';
+import { memo, useMemo, useState } from 'react';
+import { Award, Clock, Target, RotateCcw, Upload, CheckCircle, XCircle, MinusCircle, ChevronDown, ChevronUp, ListChecks } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn, calculateBandScore, formatTime } from '@/lib/utils';
-import type { IQuestion, IReadingTest } from '@/data/mockReading';
+import type { IQuestion, IReadingTest, QuestionType } from '@/data/mockReading';
 
 interface ResultPanelProps {
   test: IReadingTest;
@@ -18,6 +18,29 @@ interface ScoreBreakdown {
   wrong: number;
   unanswered: number;
   total: number;
+}
+
+function getTypeLabel(type: QuestionType): string {
+  switch (type) {
+    case 'true_false_not_given':
+      return '判断题';
+    case 'multiple_choice_single':
+      return '单选题';
+    case 'multiple_choice_multi':
+      return '多选题';
+    case 'fill_blank_summary':
+      return '摘要填空';
+    case 'fill_blank_sentence':
+      return '句子填空';
+    case 'matching_heading':
+      return '段落标题匹配';
+    case 'matching_information':
+      return '信息匹配';
+    case 'matching_name':
+      return '人名匹配';
+    default:
+      return '题目';
+  }
 }
 
 function getScoreBreakdown(questions: IQuestion[], answers: Record<string, string | string[]>): ScoreBreakdown {
@@ -61,6 +84,7 @@ function getScoreBreakdown(questions: IQuestion[], answers: Record<string, strin
 function ResultPanel({ test, answers, duration, onRetry, onBackToUpload }: ResultPanelProps) {
   const breakdown = useMemo(() => getScoreBreakdown(test.questions, answers), [test.questions, answers]);
   const bandScore = useMemo(() => calculateBandScore(breakdown.correct, breakdown.total), [breakdown.correct, breakdown.total]);
+  const [showDetail, setShowDetail] = useState(false);
 
   // 按 passage 分组统计
   const passageScores = useMemo(() => {
@@ -70,6 +94,39 @@ function ResultPanel({ test, answers, duration, onRetry, onBackToUpload }: Resul
       return { passage: p, ...b };
     });
   }, [test, answers]);
+
+  // 逐题对错详情（按 Passage 分组）
+  const detailGroups = useMemo(() => {
+    return test.passages.map((p) => ({
+      passage: p,
+      items: test.questions
+        .filter((q) => q.passageIndex === p.index)
+        .map((q) => {
+          const ua = answers[q.id];
+          const ca = q.correctAnswer;
+          let status: 'correct' | 'wrong' | 'unanswered' = 'unanswered';
+          if (ua !== undefined && ua !== '' && !(Array.isArray(ua) && ua.length === 0)) {
+            if (Array.isArray(ca)) {
+              if (Array.isArray(ua) && ua.length === ca.length && ca.every((v) => ua.some((u) => u.trim().toLowerCase() === v.trim().toLowerCase()))) {
+                status = 'correct';
+              } else {
+                status = 'wrong';
+              }
+            } else {
+              const uaStr = Array.isArray(ua) ? ua[0] ?? '' : ua;
+              status = uaStr.trim().toLowerCase() === ca.trim().toLowerCase() ? 'correct' : 'wrong';
+            }
+          }
+          return { q, ua, status };
+        }),
+    }));
+  }, [test, answers]);
+
+  const formatAnswerValue = (q: IQuestion, val?: string | string[]): string => {
+    if (val === undefined || val === '') return '未作答';
+    if (Array.isArray(val)) return val.filter((v) => v).join(' / ');
+    return val;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/10 py-8 md:py-12">
@@ -147,6 +204,79 @@ function ResultPanel({ test, answers, duration, onRetry, onBackToUpload }: Resul
                 );
               })}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* 逐题对错明细 */}
+        <Card>
+          <CardContent className="p-6">
+            <button
+              onClick={() => setShowDetail((v) => !v)}
+              className="w-full flex items-center justify-between gap-3 py-1"
+            >
+              <span className="flex items-center gap-2 font-semibold text-foreground">
+                <ListChecks className="w-4 h-4 text-primary" />
+                查看每道题对错
+                <span className="text-xs font-normal text-muted-foreground">
+                  （正确 {breakdown.correct} · 错误 {breakdown.wrong} · 未答 {breakdown.unanswered}）
+                </span>
+              </span>
+              {showDetail ? (
+                <ChevronUp className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+              )}
+            </button>
+
+            {showDetail && (
+              <div className="mt-4 space-y-6">
+                {detailGroups.map((group) => (
+                  <div key={group.passage.index}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-foreground">
+                        Passage {group.passage.index} · {group.passage.title}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {group.items.filter((i) => i.status === 'correct').length}/
+                        {group.items.length} 正确
+                      </span>
+                    </div>
+                    <div className="rounded-lg border border-border/60 divide-y divide-border/40 overflow-hidden">
+                      {group.items.map(({ q, ua, status }) => (
+                        <div key={q.id} className="flex items-center gap-3 px-3 py-2.5 bg-card">
+                          <span
+                            className={cn(
+                              'shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold',
+                              status === 'correct' && 'bg-success/15 text-success',
+                              status === 'wrong' && 'bg-destructive/15 text-destructive',
+                              status === 'unanswered' && 'bg-muted text-muted-foreground',
+                            )}
+                          >
+                            {status === 'correct' ? '✓' : status === 'wrong' ? '✗' : '—'}
+                          </span>
+                          <span className="shrink-0 w-8 text-sm font-medium text-foreground tabular-nums">
+                            {q.number}
+                          </span>
+                          <div className="flex-1 min-w-0 space-y-0.5">
+                            <div className="text-xs text-foreground/80 leading-snug line-clamp-2">
+                              {getTypeLabel(q.type)} · {q.questionText}
+                            </div>
+                            <div className="text-xs flex flex-wrap gap-x-4 gap-y-0.5">
+                              <span className="text-muted-foreground">
+                                你的答案：<span className={cn('font-medium', status === 'correct' ? 'text-success' : status === 'wrong' ? 'text-destructive' : 'text-muted-foreground')}>{formatAnswerValue(q, ua)}</span>
+                              </span>
+                              <span className="text-muted-foreground">
+                                正确答案：<span className="font-medium text-success">{formatAnswerValue(q, q.correctAnswer)}</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

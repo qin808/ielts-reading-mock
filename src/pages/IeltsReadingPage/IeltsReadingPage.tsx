@@ -532,6 +532,7 @@ export default function IeltsReadingPage() {
               questions={currentPassageQuestions}
               currentNumber={currentNumber}
               onAnswerChange={handleAnswerChange}
+              totalQuestions={test?.questions.length ?? currentPassageQuestions.length}
             />
 
             {/* 上下题浮动按钮 */}

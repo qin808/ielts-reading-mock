@@ -43,8 +43,8 @@ const SYSTEM_PROMPT = `你是一位专业的雅思考试内容结构化专家。
 }
 
 注意事项：
-1. 严格识别 Passage 1/2/3 三篇文章及其对应的题目
-2. 题目编号为全局连续编号（1-40）
+1. 严格识别 Passage 1/2/3 三篇文章及其对应的题目，必须解析出全部题目，不得遗漏
+2. 题目编号为全局连续编号（1-40），必须严格连续、不允许跳号；Part 1 通常为 1-13、Part 2 为 14-26、Part 3 为 27-40，若题目实际数量不同也需连续编号且补全缺失编号
 3. 选项数组中保留 A./B./C. 前缀
 4. 摘要填空题（FILL_BLANK_SUMMARY）必须填写 notes_content 字段：包含完整的笔记原文，保留所有上下文行（包括不带空格的纯描述行），每个空格用 _____（5个下划线）标记，行与行之间用 \\n 分隔。questions 数组中每个题目对应一个空格，按空格出现顺序编号。
 5. 句子填空题（FILL_BLANK_SENTENCE）的 question_text 必须包含完整的句子上下文，用 _____ 标记空格位置
@@ -269,7 +269,8 @@ function convertToReadingTest(data: StructuredResult, fileName: string): IReadin
 
         allQuestions.push({
           id: `p${passageIndex}-q${globalQNum}`,
-          number: q.number || globalQNum,
+          // 强制使用全局连续编号，不信任 AI 返回的 number（AI 可能跳号导致导航/计数错乱）
+          number: globalQNum,
           passageIndex,
           type: questionType,
           groupInstruction: gRaw.instructions,

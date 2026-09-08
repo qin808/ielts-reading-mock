@@ -85,6 +85,7 @@ interface QuestionPanelProps {
   currentNumber: number;
   onAnswerChange: (questionId: string, answer: string | string[]) => void;
   showResult?: boolean;
+  totalQuestions?: number;
 }
 
 function getTypeLabel(type: QuestionType): string {
@@ -130,7 +131,7 @@ function groupQuestions(questions: IQuestion[]) {
   return groups;
 }
 
-function QuestionPanel({ questions, currentNumber, onAnswerChange, showResult }: QuestionPanelProps) {
+function QuestionPanel({ questions, currentNumber, onAnswerChange, showResult, totalQuestions }: QuestionPanelProps) {
   const groups = useMemo(() => groupQuestions(questions), [questions]);
 
   const currentQ = questions.find((q) => q.number === currentNumber);
@@ -218,10 +219,10 @@ function QuestionPanel({ questions, currentNumber, onAnswerChange, showResult }:
           </div>
         )}
       </div>
-      {/* 当前题号标记（占位，供参考） */}
+      {/* 当前题号标记 */}
       {currentQ && (
         <div className="shrink-0 px-4 py-2 border-t border-border/50 bg-muted/30 text-xs text-muted-foreground text-center">
-          当前第 {currentNumber} 题 / 共 {questions.length} 题
+          当前第 {currentNumber} 题 / 共 {totalQuestions ?? questions.length} 题
         </div>
       )}
     </div>
