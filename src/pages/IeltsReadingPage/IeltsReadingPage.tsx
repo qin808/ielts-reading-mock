@@ -398,7 +398,14 @@ export default function IeltsReadingPage() {
       setCurrentNumber(1);
       setCurrentPassage(1);
       setPhase('exam');
-      toast.success('解析成功，开始模考');
+
+      // 题目完整性校验：完整剑雅阅读应为 40 题，不足时提示用户
+      const qCount = parsedTest.questions.length;
+      if (qCount < 40) {
+        toast.warning(`解析完成，但检测到题目可能不完整（${qCount}/40 题）。若题号有缺失，建议更换模型后重新解析。`, { duration: 8000 });
+      } else {
+        toast.success('解析成功，开始模考');
+      }
     } catch (err) {
       console.error('Parsing failed:', err);
       const errMsg = err instanceof Error ? err.message : '未知错误';

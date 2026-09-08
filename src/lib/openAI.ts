@@ -43,8 +43,8 @@ const SYSTEM_PROMPT = `你是一位专业的雅思考试内容结构化专家。
 }
 
 注意事项：
-1. 严格识别 Passage 1/2/3 三篇文章及其对应的题目，必须解析出全部题目，不得遗漏
-2. 题目编号为全局连续编号（1-40），必须严格连续、不允许跳号；Part 1 通常为 1-13、Part 2 为 14-26、Part 3 为 27-40，若题目实际数量不同也需连续编号且补全缺失编号
+1. 严格识别 Passage 1/2/3 三篇文章及其对应的题目，必须解析出全部题目（一份完整雅思阅读共 40 题：Passage 1 通常 13 题、Passage 2 通常 13 题、Passage 3 通常 14 题，以 PDF 实际题号为准），**绝不能遗漏任何一题**。解析完成后自查题目总数，若不足 40 或出现题号跳跃（如从 24 直接到 27），说明有遗漏，必须补齐缺失编号的题目
+2. 题目编号为全局连续编号（1-40），必须严格连续、不允许跳号
 3. 选项数组中保留 A./B./C. 前缀
 4. 摘要填空题（FILL_BLANK_SUMMARY）必须填写 notes_content 字段：包含完整的笔记原文，保留所有上下文行（包括不带空格的纯描述行），每个空格用 _____（5个下划线）标记，行与行之间用 \\n 分隔。questions 数组中每个题目对应一个空格，按空格出现顺序编号。
 5. 句子填空题（FILL_BLANK_SENTENCE）的 question_text 必须包含完整的句子上下文，用 _____ 标记空格位置
@@ -200,8 +200,9 @@ export async function structureReadingText(
     throw new Error('请先设置 OpenAI API Key');
   }
 
-  // 限制文本长度，防止 token 超限（DeepSeek 等模型上下文较短，限制更严格）
-  const maxLen = model.includes('deepseek') ? 30000 : 60000;
+  // 限制文本长度，防止 token 超限（DeepSeek-chat 上下文 64K tokens，足够容纳完整剑雅真题）
+  // 完整一份剑雅阅读（3 篇文章+全部题目文本）通常 4-8 万字符，阈值必须足够大避免截断丢题
+  const maxLen = model.includes('deepseek') ? 120000 : 200000;
   const trimmedText = readingText.length > maxLen ? readingText.slice(0, maxLen) : readingText;
 
   const userPrompt = `以下是一份雅思阅读真题的文本内容，请按要求结构化：
