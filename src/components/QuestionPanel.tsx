@@ -25,9 +25,9 @@ function SummaryNotesRenderer({ notesContent, questions, currentNumber, onAnswer
         // 统计这一行有几个 _____
         const blankCount = (line.match(/_____/g) || []).length;
         if (blankCount === 0) {
-          // 不带空格的上下文行，直接渲染
+          // 不带空格的上下文注释行，用小字渲染
           return (
-            <div key={lineIdx} className="text-sm leading-7 text-foreground/80">
+            <div key={lineIdx} className="text-xs leading-6 text-muted-foreground/90">
               {line.trim()}
             </div>
           );
