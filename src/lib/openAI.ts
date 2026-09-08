@@ -46,15 +46,16 @@ const SYSTEM_PROMPT = `你是一位专业的雅思考试内容结构化专家。
 1. 严格识别 Passage 1/2/3 三篇文章及其对应的题目，必须解析出全部题目（一份完整雅思阅读共 40 题：Passage 1 通常 13 题、Passage 2 通常 13 题、Passage 3 通常 14 题，以 PDF 实际题号为准），**绝不能遗漏任何一题**。解析完成后自查题目总数，若不足 40 或出现题号跳跃（如从 24 直接到 27），说明有遗漏，必须补齐缺失编号的题目
 2. 题目编号为全局连续编号（1-40），必须严格连续、不允许跳号
 3. 选项数组中保留 A./B./C. 前缀
-4. 摘要填空题（FILL_BLANK_SUMMARY）必须填写 notes_content 字段：包含完整的笔记原文，保留所有上下文行（包括不带空格的纯描述行），每个空格用 _____（5个下划线）标记，行与行之间用 \\n 分隔。questions 数组中每个题目对应一个空格，按空格出现顺序编号。
-5. 句子填空题（FILL_BLANK_SENTENCE）的 question_text 必须包含完整的句子上下文，用 _____ 标记空格位置
-6. 填空题若有多空，answer 为数组，按空的顺序排列
-7. 多选题 answer 为数组
-8. 若 PDF 中未提供正确答案，answer 字段留空字符串
-9. passage_content 保留原文的段落结构，用 \\n\\n 分隔段落
-10. passage_content 中必须过滤掉页码（如纯数字行）、页眉页脚（如 "Test 2"、"Cambridge IELTS"、考试机构名称等）、角标、脚注标记等非正文内容
-11. 文章中的脚注/注释（如 "* Neolithic: relating to the later Stone Age"）若属于正文解释性注释，保留在文章末尾单独成段，每段以 "*" 开头，不要混入正文段落
-12. 只输出 JSON，不要输出任何解释性文字或 markdown 标记`;
+4. 摘要填空题（FILL_BLANK_SUMMARY）必须填写 notes_content 字段：包含完整的笔记/摘要原文，保留所有上下文行（包括不带空格的纯描述行），每个空格用 _____（5个下划线）标记，行与行之间用 \\n 分隔。**notes_content 中严禁出现任何题号数字（如 "27."、"24."），空格只能用 _____ 标记，不能与数字混写**。questions 数组中每个题目对应一个空格，按空格出现顺序编号
+5. 选项式摘要填空（Complete the summary using the list of words/phrases A-K）：若原题在摘要下方提供了选项列表（如 A appeal / B determined / C intrigued...），则每个 question 必须带 options 数组（保留 "A. appeal" 格式），answer 为对应选项字母（如 "A"、"C"），此时作答方式是**从列表选择字母**，不是输入单词
+6. 判断题的 options 必须保留原题的判定词：原题是 YES/NO/NOT GIVEN 就输出 ["YES", "NO", "NOT GIVEN"]，是 TRUE/FALSE/NOT GIVEN 就输出 ["TRUE", "FALSE", "NOT GIVEN"]，answer 为对应判定词
+7. 填空题若有多空，answer 为数组，按空的顺序排列
+8. 多选题 answer 为数组
+9. 若 PDF 中未提供正确答案，answer 字段留空字符串
+10. passage_content 保留原文的段落结构，用 \\n\\n 分隔段落
+11. passage_content 中必须过滤掉页码（如纯数字行）、页眉页脚（如 "Test 2"、"Cambridge IELTS"、考试机构名称等）、角标、脚注标记等非正文内容
+12. 文章中的脚注/注释（如 "* Neolithic: relating to the later Stone Age"）若属于正文解释性注释，保留在文章末尾单独成段，每段以 "*" 开头，不要混入正文段落
+13. 只输出 JSON，不要输出任何解释性文字或 markdown 标记`;
 
 export interface StructuredResult {
   passages: {

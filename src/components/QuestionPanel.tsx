@@ -12,60 +12,110 @@ interface SummaryNotesRendererProps {
 
 /**
  * 摘要填空题统一渲染器：渲染完整笔记，把 _____ 替换为输入框
+ * - 无选项：自由输入框
+ * - 有选项（如 A-K 列表选词）：下拉选择框 + 底部选项列表
  * 保留不带空格的上下文行
  */
 function SummaryNotesRenderer({ notesContent, questions, currentNumber, onAnswerChange, showResult }: SummaryNotesRendererProps) {
+  // 该组是否有选项列表（A-K 列表选词式摘要填空）
+  const hasOptions = !!questions[0]?.options && questions[0].options.length > 0;
+  const groupOptions = hasOptions ? questions[0].options! : [];
+
+  // 清理 AI 误输出的题号数字（如 "27. _____" → "_____"）
+  const cleanLine = (line: string) => line.replace(/(\d{1,2})[.、]?\s*(?=_____)/g, '');
+
   // 按行拆分笔记
   const lines = notesContent.split(/\n/).filter((l) => l.trim().length > 0);
   let blankIndex = 0;
 
+  // 从选项文本提取字母
+  const getLetter = (opt: string, i: number) =>
+    opt.match(/^([A-Z]{1,2})\.?\s*/)?.[1]?.toUpperCase() ?? String.fromCharCode(65 + i);
+
+  // 生成单个空位控件
+  const renderBlank = (q: IQuestion | undefined, index: number) => {
+    if (!q) {
+      return (
+        <span key={`empty-${index}`} className="inline-block w-16 h-6 mx-1 border border-dashed border-border/50 rounded align-middle" />
+      );
+    }
+    const val = (q.userAnswer as string) ?? '';
+    const ca = q.correctAnswer as string;
+    const isCorrect = showResult && !!val && val.trim().toLowerCase() === (ca ?? '').toLowerCase();
+    const isWrong = showResult && !!val && val.trim().toLowerCase() !== (ca ?? '').toLowerCase();
+    const isCurrent = q.number === currentNumber;
+
+    // 选项式：下拉框
+    if (hasOptions) {
+      const selectedLetter = val.trim().toUpperCase();
+      return (
+        <select
+          key={`select-${index}`}
+          value={val}
+          disabled={showResult}
+          onChange={(e) => onAnswerChange(q.id, e.target.value)}
+          className={cn(
+            'inline-block w-16 h-7 mx-1 text-sm text-center border rounded align-middle bg-background focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary',
+            isCurrent && 'ring-2 ring-primary/40 border-primary',
+            showResult && isCorrect && 'bg-success/15 border-success/50 text-success-foreground',
+            showResult && isWrong && 'bg-destructive/15 border-destructive/50',
+            !val && 'text-muted-foreground/70',
+          )}
+        >
+          <option value="">{String(q.number)}</option>
+          {groupOptions.map((opt, i) => (
+            <option key={opt} value={getLetter(opt, i)}>
+              {getLetter(opt, i)}
+            </option>
+          ))}
+          {selectedLetter && !groupOptions.some((o, i) => getLetter(o, i) === selectedLetter) && (
+            <option value={val}>{selectedLetter}</option>
+          )}
+        </select>
+      );
+    }
+
+    // 自由输入框
+    return (
+      <input
+        key={`input-${index}`}
+        type="text"
+        value={val}
+        disabled={showResult}
+        onChange={(e) => onAnswerChange(q.id, e.target.value)}
+        className={cn(
+          'inline-block w-16 h-6 px-1 mx-1 text-sm text-center border rounded align-middle focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary placeholder:text-muted-foreground/50 placeholder:text-xs',
+          isCurrent && 'ring-2 ring-primary/40 border-primary',
+          showResult && isCorrect && 'bg-success/15 border-success/50 text-success-foreground',
+          showResult && isWrong && 'bg-destructive/15 border-destructive/50',
+        )}
+        placeholder={String(q.number)}
+      />
+    );
+  };
+
   return (
     <div className="space-y-2">
       {lines.map((line, lineIdx) => {
+        const cleaned = cleanLine(line);
         // 统计这一行有几个 _____
-        const blankCount = (line.match(/_____/g) || []).length;
+        const blankCount = (cleaned.match(/_____/g) || []).length;
         if (blankCount === 0) {
           // 不带空格的上下文注释行，用小字渲染
           return (
             <div key={lineIdx} className="text-xs leading-6 text-muted-foreground/90">
-              {line.trim()}
+              {cleaned.trim()}
             </div>
           );
         }
 
-        // 带空格的行，把 _____ 替换为输入框
-        const parts = line.split('_____');
+        // 带空格的行，把 _____ 替换为控件
+        const parts = cleaned.split('_____');
         const elements: React.ReactNode[] = [];
         parts.forEach((part, i) => {
           elements.push(<span key={`text-${i}`}>{part}</span>);
           if (i < parts.length - 1) {
-            const qIndex = blankIndex;
-            const q = questions[qIndex];
-            if (q) {
-              const val = (q.userAnswer as string) ?? '';
-              const ca = q.correctAnswer as string;
-              const isCorrect = showResult && val.trim().toLowerCase() === (ca ?? '').toLowerCase();
-              const isWrong = showResult && val && val.trim().toLowerCase() !== (ca ?? '').toLowerCase();
-              const isCurrent = q.number === currentNumber;
-              elements.push(
-                <input
-                  key={`input-${qIndex}`}
-                  type="text"
-                  value={val}
-                  disabled={showResult}
-                  onChange={(e) => onAnswerChange(q.id, e.target.value)}
-                  className={cn(
-                    'inline-block w-16 h-6 px-1 mx-1 text-sm text-center border rounded align-middle focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary placeholder:text-muted-foreground/50 placeholder:text-xs',
-                    isCurrent && 'ring-2 ring-primary/40 border-primary',
-                    showResult && isCorrect && 'bg-success/15 border-success/50 text-success-foreground',
-                    showResult && isWrong && 'bg-destructive/15 border-destructive/50',
-                  )}
-                  placeholder={String(q.number)}
-                />
-              );
-            } else {
-              elements.push(<span key={`empty-${qIndex}`} className="inline-block w-16 h-6 mx-1 border border-dashed border-border/50 rounded align-middle" />);
-            }
+            elements.push(renderBlank(questions[blankIndex], blankIndex));
             blankIndex++;
           }
         });
@@ -76,6 +126,21 @@ function SummaryNotesRenderer({ notesContent, questions, currentNumber, onAnswer
           </div>
         );
       })}
+
+      {/* 选项列表（A-K 选词式摘要填空） */}
+      {hasOptions && (
+        <div className="mt-3 pt-3 border-t border-border/40">
+          <div className="text-xs text-muted-foreground mb-2 font-medium">选项列表</div>
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+            {groupOptions.map((opt, i) => (
+              <span key={opt} className="text-sm text-foreground/90">
+                <span className="font-semibold text-primary mr-1">{getLetter(opt, i)}</span>
+                {opt.replace(/^[A-Z]{1,2}\.?\s*/i, '')}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
