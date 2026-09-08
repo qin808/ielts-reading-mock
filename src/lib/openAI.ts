@@ -53,7 +53,8 @@ const SYSTEM_PROMPT = `你是一位专业的雅思考试内容结构化专家。
 8. 若 PDF 中未提供正确答案，answer 字段留空字符串
 9. passage_content 保留原文的段落结构，用 \\n\\n 分隔段落
 10. passage_content 中必须过滤掉页码（如纯数字行）、页眉页脚（如 "Test 2"、"Cambridge IELTS"、考试机构名称等）、角标、脚注标记等非正文内容
-11. 只输出 JSON，不要输出任何解释性文字或 markdown 标记`;
+11. 文章中的脚注/注释（如 "* Neolithic: relating to the later Stone Age"）若属于正文解释性注释，保留在文章末尾单独成段，每段以 "*" 开头，不要混入正文段落
+12. 只输出 JSON，不要输出任何解释性文字或 markdown 标记`;
 
 export interface StructuredResult {
   passages: {
@@ -285,11 +286,19 @@ function convertToReadingTest(data: StructuredResult, fileName: string): IReadin
     });
 
     const lastQ = firstQ + passageQCount - 1;
-    // 将 passage_content 转为 HTML 分段
+    // 将 passage_content 转为 HTML 分段（以 * 开头的段落标记为脚注小字）
     const htmlContent = content
       .split(/\n\s*\n/)
       .filter((p) => p.trim())
-      .map((p) => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
+      .map((p) => {
+        const trimmed = p.trim();
+        const isFootnote = /^\*\s*/.test(trimmed);
+        if (isFootnote) {
+          const text = trimmed.replace(/^\*\s*/, '');
+          return `<p class="footnote">* ${text.replace(/\n/g, '<br/>')}</p>`;
+        }
+        return `<p>${p.replace(/\n/g, '<br/>')}</p>`;
+      })
       .join('');
 
     passages.push({

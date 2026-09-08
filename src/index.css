@@ -3,3 +3,11 @@
 @import "tw-animate-css";
 @import "./tailwind-theme.css";
 @import "./typography.css";
+/* 阅读原文中的脚注注释（AI 解析时以 * 开头的段落） */
+.reading-content p.footnote {
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+}
