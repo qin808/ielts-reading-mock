@@ -484,7 +484,10 @@ function renderOptions(
     return (
       <div className="space-y-2">
         {options.map((opt, idx) => {
-          const label = String.fromCharCode(65 + idx); // A, B, C, D, E
+          // 智能提取选项字母：如果 opt 已带 "A. xxx" 前缀则提取，否则按位置生成
+          const match = opt.match(/^([A-Z]{1,2})\.\s*(.*)/);
+          const label = match ? match[1] : String.fromCharCode(65 + idx);
+          const optText = match ? match[2] : opt;
           const checked = ua.includes(label);
           const isCorrectOpt = showResult && ca.includes(label);
           const isWrongOpt = showResult && checked && !ca.includes(label);
@@ -509,7 +512,7 @@ function renderOptions(
                 className="shrink-0 text-primary focus:ring-primary"
               />
               <span className="text-sm text-foreground">
-                <span className="font-semibold">{label}.</span> {opt}
+                <span className="font-semibold">{label}.</span> {optText}
               </span>
             </label>
           );
