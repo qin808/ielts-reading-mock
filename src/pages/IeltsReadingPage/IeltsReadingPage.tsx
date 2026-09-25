@@ -18,10 +18,11 @@ import QuestionNav from '@/components/QuestionNav';
 import ResultPanel from '@/components/ResultPanel';
 import { MOCK_READING_TEST, type IReadingTest } from '@/data/mockReading';
 import { parsePdfText, parseImageFile, isImageFile, type OcrProgress } from '@/lib/pdfParser';
-import { structureReadingText, gradeAnswers, DEFAULT_MODEL, DEFAULT_API_URL } from '@/lib/openAI';
+import { structureReadingText, gradeAnswers, generateQuestionsFromArticle, DEFAULT_MODEL, DEFAULT_API_URL, type QuestionGenConfig } from '@/lib/openAI';
+import QuestionConfigPanel from '@/components/QuestionConfigPanel';
 import { storage, STORAGE_KEYS } from '@/lib/storage';
 
-type ExamPhase = 'upload' | 'parsing' | 'exam' | 'grading' | 'result';
+type ExamPhase = 'upload' | 'parsing' | 'configuring' | 'exam' | 'grading' | 'result';
 
 interface PersistedState {
   test: IReadingTest;
@@ -40,6 +41,10 @@ export default function IeltsReadingPage() {
   const [currentNumber, setCurrentNumber] = useState(1);
   const [currentPassage, setCurrentPassage] = useState<1 | 2 | 3>(1);
   const [isParsing, setIsParsing] = useState(false);
+  const [articleText, setArticleText] = useState('');
+  const [articleFileName, setArticleFileName] = useState('');
+  const [genApiKey, setGenApiKey] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
   const [parseStep, setParseStep] = useState(0);
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -365,6 +370,39 @@ export default function IeltsReadingPage() {
     toast.success('已加载示例真题，开始模考');
   }, []);
 
+  const handleArticleExtracted = useCallback((text: string, fileName: string, apiKey: string) => {
+    setArticleText(text);
+    setArticleFileName(fileName);
+    setGenApiKey(apiKey);
+    setPhase('configuring');
+  }, []);
+
+  const handleGenerateQuestions = useCallback(async (config: QuestionGenConfig) => {
+    if (!articleText) return;
+    setIsGenerating(true);
+    try {
+      const model = storage.getItem(STORAGE_KEYS.MODEL) || DEFAULT_MODEL;
+      const apiUrl = storage.getItem(STORAGE_KEYS.API_BASE_URL) || DEFAULT_API_URL;
+      toast.info('AI 正在根据文章出题...', { duration: 8000 });
+      const generatedTest = await generateQuestionsFromArticle(genApiKey, articleText, config, model, apiUrl);
+      if (!generatedTest.questions || generatedTest.questions.length === 0) {
+        throw new Error('AI 未生成任何题目，请调整题型数量后重试');
+      }
+      setTest(generatedTest);
+      setAnswers({});
+      setTimeLeft(generatedTest.totalTime);
+      setCurrentNumber(1);
+      setCurrentPassage(1);
+      setPhase('exam');
+      toast.success('AI 出题完成，共 ' + generatedTest.questions.length + ' 题');
+    } catch (err) {
+      console.error('Generate questions failed:', err);
+      toast.error('AI 出题失败：' + (err instanceof Error ? err.message : '未知错误'), { duration: 8000 });
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [articleText, genApiKey]);
+
   const handleFileSelected = useCallback(async (file: File, apiKey: string) => {
     // 重置旧状态
     setTest(null);
@@ -442,6 +480,7 @@ export default function IeltsReadingPage() {
         onFileSelected={handleFileSelected}
         onUseMock={handleUseMock}
         isParsing={isParsing}
+        onArticleExtracted={handleArticleExtracted}
       />
     );
   }
@@ -652,6 +691,19 @@ export default function IeltsReadingPage() {
           </DialogContent>
         </Dialog>
       </div>
+    );
+  }
+
+  // configuring 阶段：题型配置
+  if (phase === 'configuring') {
+    return (
+      <QuestionConfigPanel
+        articleTitle={articleFileName}
+        articleLength={articleText.length}
+        onGenerate={handleGenerateQuestions}
+        onBack={handleBackToUpload}
+        isGenerating={isGenerating}
+      />
     );
   }
 
