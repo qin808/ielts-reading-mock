@@ -211,6 +211,25 @@ export default function IeltsReadingPage() {
     setGradingProgress(0);
     setPhase('grading');
 
+    // AI 出题模式：如果所有题目已有正确答案，直接判分，无需再调 AI 批改
+    const allAnswered = testToGrade.questions.every((q) => {
+      const ca = q.correctAnswer;
+      if (Array.isArray(ca)) return ca.length > 0 && ca.every((v) => v);
+      return !!ca;
+    });
+
+    if (allAnswered) {
+      setDuration(usedDuration);
+      setPhase('result');
+      setIsGrading(false);
+      try {
+        const data: PersistedState = { test: testToGrade, answers, timeLeft: 0, phase: 'result', duration: usedDuration };
+        storage.setItem(STORAGE_KEYS.STATE, JSON.stringify(data));
+      } catch { /* ignore */ }
+      toast.success('交卷完成！');
+      return;
+    }
+
     const apiKey = storage.getItem(STORAGE_KEYS.OPENAI_KEY) ?? '';
     const model = storage.getItem(STORAGE_KEYS.MODEL) || DEFAULT_MODEL;
     const apiUrl = storage.getItem(STORAGE_KEYS.API_BASE_URL) || DEFAULT_API_URL;

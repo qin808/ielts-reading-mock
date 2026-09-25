@@ -459,3 +459,111 @@ ${questionsText}
 
   return result;
 }
+
+// ============ AI 出题模式 ============
+
+export interface QuestionGenConfig {
+  true_false_not_given: number;
+  multiple_choice_single: number;
+  multiple_choice_multi: number;
+  fill_blank_sentence: number;
+  fill_blank_summary: number;
+  matching_heading: number;
+  matching_information: number;
+}
+
+export const DEFAULT_GEN_CONFIG: QuestionGenConfig = {
+  true_false_not_given: 5,
+  multiple_choice_single: 3,
+  multiple_choice_multi: 0,
+  fill_blank_sentence: 4,
+  fill_blank_summary: 0,
+  matching_heading: 0,
+  matching_information: 0,
+};
+
+const GEN_SYSTEM_PROMPT = `你是一位资深雅思阅读出题专家，精通剑桥雅思真题的出题风格。请根据用户提供的英文文章，模仿剑雅阅读真题的风格和难度，按照用户指定的题型和数量出题。
+
+要求：
+1. 所有题目必须严格基于文章内容，答案必须能在原文中找到依据
+2. 题目表述风格模仿剑桥雅思真题（如 "Do the following statements agree with the claims of the writer?" 等）
+3. 每道题必须给出正确答案
+4. 判断题用 TRUE/FALSE/NOT GIVEN，options 固定为 ["TRUE","FALSE","NOT GIVEN"]
+5. 单选题给出 4 个选项（A-D），正确答案为字母
+6. 多选题（选 TWO）给出 5 个选项（A-E），正确答案为两个字母的数组
+7. 句子填空题：答案必须是原文中出现的原词，question_text 中用 _____ 标记空格位置
+8. 摘要填空：写一个与文章相关的 summary，保留上下文句，用 _____ 标记空格，答案为原文原词；notes_content 中严禁出现题号数字
+9. 标题匹配：为文章各段落拟小标题，选项为 i, ii, iii... 格式，答案为罗马数字
+10. 段落信息匹配：给出陈述，答案为段落字母（A, B, C...），options 为段落字母列表
+11. 选项数组中保留 A./B./C. 或 i./ii./iii. 前缀
+
+输出严格 JSON 格式：
+{
+  "passage_title": "文章标题",
+  "passage_content": "文章完整正文，用 \\n\\n 分隔段落",
+  "question_groups": [
+    {
+      "question_type": "TRUE_FALSE_NOT_GIVEN | MULTIPLE_CHOICE_SINGLE | MULTIPLE_CHOICE_MULTI | FILL_BLANK_SENTENCE | FILL_BLANK_SUMMARY | MATCHING_HEADING | MATCHING_INFORMATION",
+      "instructions": "该题型的说明文字（模仿剑雅风格）",
+      "notes_content": "仅摘要填空需要：完整摘要文本，用 _____ 标记空格，\\n 换行",
+      "questions": [
+        {
+          "number": 1,
+          "question_text": "题干",
+          "options": ["A. 选项", "B. 选项"],
+          "answer": "正确答案（单选/判断为字符串，多选/多空为数组）"
+        }
+      ]
+    }
+  ]
+}
+
+只输出 JSON，不要输出任何解释。`;
+
+export async function generateQuestionsFromArticle(
+  apiKey: string,
+  articleText: string,
+  config: QuestionGenConfig,
+  model: string = DEFAULT_MODEL,
+  apiUrl: string = DEFAULT_API_URL,
+): Promise<IReadingTest> {
+  if (!apiKey.trim()) throw new Error('请先设置 API Key');
+
+  const reqs: string[] = [];
+  if (config.true_false_not_given > 0) reqs.push(`判断题(TRUE/FALSE/NOT GIVEN) ${config.true_false_not_given} 题`);
+  if (config.multiple_choice_single > 0) reqs.push(`单选题(4选1) ${config.multiple_choice_single} 题`);
+  if (config.multiple_choice_multi > 0) reqs.push(`多选题(选TWO, A-E) ${config.multiple_choice_multi} 组`);
+  if (config.fill_blank_sentence > 0) reqs.push(`句子填空(从原文选词) ${config.fill_blank_sentence} 题`);
+  if (config.fill_blank_summary > 0) reqs.push(`摘要填空 ${config.fill_blank_summary} 个空`);
+  if (config.matching_heading > 0) reqs.push(`标题匹配 ${config.matching_heading} 题`);
+  if (config.matching_information > 0) reqs.push(`段落信息匹配 ${config.matching_information} 题`);
+
+  const userPrompt = `请根据以下英文文章出雅思阅读题：
+- 题型与数量：${reqs.join('；')}
+- 模仿剑桥雅思阅读真题风格和难度
+- 题目和答案都必须严格基于文章内容
+
+文章：
+${articleText.slice(0, 80000)}`;
+
+  const content = await callChatApi(
+    apiKey, apiUrl, model,
+    [{ role: 'system', content: GEN_SYSTEM_PROMPT }, { role: 'user', content: userPrompt }],
+    0.4,
+  );
+
+  const parsed = extractJson(content);
+
+  const singleResult: StructuredResult = {
+    passages: [{
+      passage_title: parsed.passage_title || 'Reading Passage',
+      passage_content: parsed.passage_content || articleText,
+      question_groups: parsed.question_groups || [],
+    }],
+  };
+
+  const test = convertToReadingTest(singleResult, 'AI 出题练习');
+  test.passages = test.passages.slice(0, 1);
+  test.passages[0].questionRange = `Questions 1-${test.questions.length}`;
+  return test;
+}
